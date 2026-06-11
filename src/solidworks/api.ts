@@ -5,6 +5,7 @@ import { loadWinax } from '../adapters/winax-loader.js';
 import { coerceComNumber, runMacro2 } from '../utils/com-helpers.js';
 import { logger } from '../utils/logger.js';
 import { executeRevolveViaScriptBridge } from '../utils/revolve-bridge.js';
+import { setPartColorViaScriptBridge } from '../utils/part-color-bridge.js';
 import { SolidWorksConfig } from '../utils/solidworks-config.js';
 import type { SolidWorksFeature, SolidWorksModel } from './types.js';
 
@@ -363,6 +364,23 @@ export class SolidWorksAPI {
       bridge.error ||
         'Revolve failed. Ensure the sketch has a construction centerline as the revolve axis.'
     );
+  }
+
+  setPartColor(r = 0, g = 0, b = 0): void {
+    this.ensureCurrentModel();
+    if (!this.currentModel) throw new Error('No active model');
+
+    let docTitle = 'ActiveDoc';
+    try {
+      docTitle = this.currentModel.GetTitle?.() || this.currentModel.GetTitle() || docTitle;
+    } catch (_e) {
+      // use default
+    }
+
+    const result = setPartColorViaScriptBridge(docTitle, r, g, b);
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to set part color');
+    }
   }
 
   private executeRevolveViaMacro(angle: number, reverse: boolean): SolidWorksFeature {

@@ -108,6 +108,24 @@ export const modelingTools = [
   },
 
   {
+    name: 'set_part_color',
+    description: 'Set display color (RGB) on all faces of the active part solid body',
+    inputSchema: z.object({
+      r: z.number().min(0).max(255).default(0).describe('Red 0-255'),
+      g: z.number().min(0).max(255).default(0).describe('Green 0-255'),
+      b: z.number().min(0).max(255).default(0).describe('Blue 0-255'),
+    }),
+    handler: (args: { r?: number; g?: number; b?: number }, swApi: SolidWorksAPI) => {
+      try {
+        swApi.setPartColor(args.r ?? 0, args.g ?? 0, args.b ?? 0);
+        return `Set part color to RGB(${args.r ?? 0}, ${args.g ?? 0}, ${args.b ?? 0})`;
+      } catch (error) {
+        return `Failed to set part color: ${error}`;
+      }
+    },
+  },
+
+  {
     name: 'get_dimension',
     description: 'Get the value of a dimension',
     inputSchema: z.object({
