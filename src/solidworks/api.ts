@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { loadWinax } from '../adapters/winax-loader.js';
 import { coerceComNumber, runMacro2 } from '../utils/com-helpers.js';
 import { logger } from '../utils/logger.js';
+import { executeRevolveViaScriptBridge } from '../utils/revolve-bridge.js';
 import { SolidWorksConfig } from '../utils/solidworks-config.js';
 import type { SolidWorksFeature, SolidWorksModel } from './types.js';
 
@@ -294,10 +295,10 @@ export class SolidWorksAPI {
     }
   }
 
-  createRevolve(angle = 360, reverse = false): SolidWorksFeature {
+  createRevolve(angle = 360, reverse = false, axisPickYMeters = 0.001): SolidWorksFeature {
     this.ensureCurrentModel();
     if (!this.currentModel) throw new Error('No active model');
-    return this.createRevolveDirect(angle, reverse);
+    return this.createRevolveDirect(angle, reverse, axisPickYMeters);
   }
 
   private selectLatestSketchFeature(): boolean {
@@ -330,7 +331,7 @@ export class SolidWorksAPI {
     return false;
   }
 
-  private createRevolveDirect(angle: number, reverse: boolean): SolidWorksFeature {
+  private createRevolveDirect(angle: number, reverse: boolean, axisPickYMeters: number): SolidWorksFeature {
     const sketchMgr = this.currentModel.SketchManager;
     if (sketchMgr?.ActiveSketch) {
       sketchMgr.InsertSketch(true);
@@ -342,40 +343,26 @@ export class SolidWorksAPI {
       throw new Error('No sketch found for revolve');
     }
 
-    const angleRad = (angle * Math.PI) / 180;
-    const feature = this.currentModel.FeatureManager.FeatureRevolve(
-      reverse,
-      false,
-      angleRad,
-      0,
-      false,
-      false,
-      false,
-      true
-    );
-
-    if (!feature) {
-      throw new Error(
-        'FeatureRevolve returned null. Revolve on SW 2023 via winax requires selecting a centerline axis, ' +
-          'which currently crashes the COM bridge. Complete the revolve manually in SolidWorks, or use extrusion workflows.'
-      );
-    }
-
-    let featureName = 'Revolve1';
+    let docTitle = 'ActiveDoc';
     try {
-      featureName = feature.Name || feature.GetName?.() || featureName;
+      docTitle = this.currentModel.GetTitle?.() || this.currentModel.GetTitle() || docTitle;
     } catch (_e) {
-      // Use default name
+      // Use default title for bridge activation
     }
 
-    this.currentModel.ClearSelection2(true);
-    this.currentModel.EditRebuild3();
+    const bridge = executeRevolveViaScriptBridge(docTitle, angle, reverse, axisPickYMeters);
+    if (bridge.success && bridge.featureName) {
+      return {
+        name: bridge.featureName,
+        type: 'Revolution',
+        suppressed: false,
+      };
+    }
 
-    return {
-      name: featureName,
-      type: 'Revolution',
-      suppressed: false,
-    };
+    throw new Error(
+      bridge.error ||
+        'Revolve failed. Ensure the sketch has a construction centerline as the revolve axis.'
+    );
   }
 
   private executeRevolveViaMacro(angle: number, reverse: boolean): SolidWorksFeature {

@@ -43,9 +43,9 @@ const workflows = {
     ['create_part', {}],
     ['create_sketch', { plane: 'Front' }],
     ['sketch_centerline', { start: { x: 0, y: -25 }, end: { x: 0, y: 25 } }],
-    ['sketch_arc', { center: { x: 0, y: 0 }, start: { x: -25, y: 0 }, end: { x: 25, y: 0 }, direction: 'counterclockwise' }],
+    ['sketch_arc', { start: { x: 0, y: 25 }, end: { x: 0, y: -25 }, center: { x: 25, y: 0 } }],
     ['exit_sketch', { rebuild: true }],
-    ['create_revolve', { angle: 360 }],
+    ['create_revolve', { angle: 360, axisPickY: 12.5 }],
     ['get_bounding_box', {}],
   ],
 };

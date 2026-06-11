@@ -91,10 +91,15 @@ export const modelingTools = [
     inputSchema: z.object({
       angle: z.number().default(360).describe('Revolve angle in degrees'),
       reverse: z.boolean().default(false).describe('Reverse direction'),
+      axisPickY: z
+        .number()
+        .optional()
+        .describe('Y coordinate in mm for axis pick point on centerline (default: 1mm)'),
     }),
     handler: (args: any, swApi: SolidWorksAPI) => {
       try {
-        const feature = swApi.createRevolve(args.angle, args.reverse);
+        const axisPickYMeters = (args.axisPickY ?? 1) / 1000;
+        const feature = swApi.createRevolve(args.angle, args.reverse, axisPickYMeters);
         return `Created revolve: ${feature.name}`;
       } catch (error) {
         return `Failed to create revolve: ${error}`;

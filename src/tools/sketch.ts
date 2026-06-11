@@ -341,11 +341,11 @@ export const sketchTools = [
 
   {
     name: 'sketch_arc',
-    description: 'Draw an arc in the active sketch',
+    description: 'Draw a 3-point arc in the active sketch (start, end, point on arc)',
     inputSchema: z.object({
       center: z.object({
-        x: z.number().describe('Center X coordinate in mm'),
-        y: z.number().describe('Center Y coordinate in mm'),
+        x: z.number().describe('Point-on-arc X coordinate in mm (third point, not arc center)'),
+        y: z.number().describe('Point-on-arc Y coordinate in mm (third point, not arc center)'),
       }),
       start: z.object({
         x: z.number().describe('Start point X coordinate in mm'),
@@ -363,7 +363,7 @@ export const sketchTools = [
         const model = swApi.getCurrentModel();
         if (!model) throw new Error('No active model');
 
-        // Create arc (3-point arc)
+        // Create3PointArc(start, end, pointOnArc) — third point lies on the arc
         const arc = model.SketchManager.Create3PointArc(
           args.start.x / 1000,
           args.start.y / 1000,
