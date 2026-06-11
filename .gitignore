@@ -12,6 +12,7 @@ build/
 .env
 .env.local
 .env.*.local
+scripts/.install-versions.bat
 
 # Logs
 logs/
