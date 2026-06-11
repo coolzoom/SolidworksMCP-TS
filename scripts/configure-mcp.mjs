@@ -69,9 +69,11 @@ async function fileExists(path) {
 async function loadDotEnv(projectDir) {
   const vars = {};
   try {
-    const content = await fs.readFile(join(projectDir, '.env'), 'utf-8');
-    for (const line of content.split('\n')) {
-      const m = line.match(/^\s*([^#=]+)=(.*)$/);
+    const content = (await fs.readFile(join(projectDir, '.env'), 'utf-8')).replace(/^\uFEFF/, '');
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.replace(/\r$/, '').trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const m = trimmed.match(/^([^=]+)=(.*)$/);
       if (m) vars[m[1].trim()] = m[2].trim();
     }
   } catch {

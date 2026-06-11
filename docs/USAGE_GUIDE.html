@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SolidWorks MCP Server 使用说明</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent2: #60a5fa;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --code-bg: #0d1117;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      padding: 0 1.5rem 4rem;
+    }
+    header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f1419 60%);
+      border-bottom: 1px solid var(--border);
+      padding: 2.5rem 0 2rem;
+      margin: 0 -1.5rem 2rem;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+    header h1 { font-size: 1.85rem; font-weight: 700; margin-bottom: 0.4rem; }
+    header p { color: var(--muted); max-width: 720px; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-top: 0.75rem;
+      margin-right: 0.4rem;
+    }
+    .badge-ok { background: rgba(34,197,94,0.2); color: var(--ok); border: 1px solid var(--ok); }
+    .badge-info { background: rgba(59,130,246,0.2); color: var(--accent2); border: 1px solid var(--accent); }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(15,20,25,0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      margin: 0 -1.5rem 2rem;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+    }
+    nav a { color: var(--accent2); text-decoration: none; font-size: 0.9rem; }
+    nav a:hover { text-decoration: underline; }
+    main { max-width: 920px; margin: 0 auto; }
+    section { margin-bottom: 2.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      color: #f1f5f9;
+    }
+    h3 { font-size: 1.05rem; margin: 1.25rem 0 0.6rem; color: #cbd5e1; }
+    p, li { color: #cbd5e1; margin-bottom: 0.6rem; }
+    ul, ol { padding-left: 1.4rem; margin-bottom: 1rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.4rem;
+      margin: 1rem 0;
+    }
+    .card-ok { border-left: 4px solid var(--ok); }
+    .card-warn { border-left: 4px solid var(--warn); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.75rem;
+      text-align: left;
+    }
+    th { background: var(--surface2); color: #f1f5f9; }
+    code, pre {
+      font-family: Consolas, "Cascadia Code", monospace;
+      font-size: 0.86rem;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      overflow-x: auto;
+      margin: 0.75rem 0 1rem;
+      color: #a5f3fc;
+    }
+    code { background: var(--code-bg); padding: 0.15rem 0.4rem; border-radius: 4px; color: #7dd3fc; }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+    .flow span {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 0.35rem 0.7rem;
+      border-radius: 6px;
+    }
+    .flow .arrow { color: var(--muted); background: none; border: none; padding: 0; }
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .test-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .test-item .status { font-weight: 700; font-size: 0.85rem; }
+    .status-pass { color: var(--ok); }
+    .status-fail { color: var(--err); }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SolidWorks MCP Server 使用说明</h1>
+    <p>通过 MCP 协议将 Cursor / Claude 等 AI 助手连接到 SolidWorks，实现零件创建、草图绘制、特征建模等自动化操作。</p>
+    <span class="badge badge-ok">测试状态：通过（2026-06-11）</span>
+    <span class="badge badge-info">版本 3.1.3 · SolidWorks 2023</span>
+  </header>
+
+  <nav>
+    <a href="#overview">概述</a>
+    <a href="#requirements">环境要求</a>
+    <a href="#install">安装</a>
+    <a href="#start">启动 MCP</a>
+    <a href="#usage">如何使用</a>
+    <a href="#tools">常用工具</a>
+    <a href="#test">测试</a>
+    <a href="#test-report">测试报告</a>
+    <a href="#troubleshoot">故障排除</a>
+  </nav>
+
+  <main>
+    <section id="overview">
+      <h2>1. 概述</h2>
+      <p>SolidWorks MCP Server 是一个基于 Node.js 的 MCP（Model Context Protocol）服务，通过 <code>winax</code> 与 SolidWorks COM API 通信，将 CAD 操作暴露为 AI 可调用的工具。</p>
+      <div class="flow">
+        <span>Cursor / Claude</span>
+        <span class="arrow">→</span>
+        <span>MCP 协议 (stdio)</span>
+        <span class="arrow">→</span>
+        <span>solidworks-mcp-server</span>
+        <span class="arrow">→</span>
+        <span>winax</span>
+        <span class="arrow">→</span>
+        <span>SolidWorks COM</span>
+      </div>
+      <div class="card card-ok">
+        <strong>架构要点</strong>
+        <ul>
+          <li>简单操作（≤12 参数）：直接 COM 调用</li>
+          <li>复杂操作（13+ 参数）：自动生成 VBA 宏执行</li>
+          <li>当前注册 <strong>86 个工具</strong>（建模、草图、工程图、导出、VBA 等）</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="requirements">
+      <h2>2. 环境要求</h2>
+      <table>
+        <thead>
+          <tr><th>组件</th><th>要求</th><th>本机检测结果</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>操作系统</td><td>Windows 10/11</td><td>Windows 10</td></tr>
+          <tr><td>SolidWorks</td><td>2021–2025，需已安装并运行</td><td>2023 (API v31) ✓</td></tr>
+          <tr><td>Node.js</td><td><strong>v20–v22</strong>（winax 不兼容 v24+）</td><td>v20.20.2 ✓</td></tr>
+          <tr><td>Python</td><td>3.8+（编译 winax 需要）</td><td>3.12.10 ✓</td></tr>
+          <tr><td>VS Build Tools</td><td>C++ 桌面开发工作负载</td><td>VS 2022 Community ✓</td></tr>
+          <tr><td>winax</td><td>3.4.2 原生模块</td><td>已编译 ✓</td></tr>
+          <tr><td>MCP 客户端</td><td>Cursor 或 Claude Desktop</td><td>Cursor</td></tr>
+        </tbody>
+      </table>
+      <div class="card card-warn">
+        <strong>重要：</strong>请勿使用 Node.js v24 运行 MCP。必须使用 v20–v22，否则 <code>winax</code> 无法加载。
+      </div>
+    </section>
+
+    <section id="install">
+      <h2>3. 安装</h2>
+      <h3>3.1 一键安装（推荐）</h3>
+      <p>以管理员身份打开命令提示符，进入项目目录：</p>
+      <pre>cd C:\Users\hands\Documents\GitHub\SolidworksMCP-TS
+install.bat --install-deps</pre>
+      <p>安装脚本会自动完成：</p>
+      <ol>
+        <li>检测 / 安装 Node 20、Python、VS Build Tools</li>
+        <li>检测 SolidWorks 版本与安装路径</li>
+        <li>同步 <code>.env</code> 配置</li>
+        <li><code>npm install</code> + 编译 <code>winax@3.4.2</code></li>
+        <li>构建 TypeScript（<code>dist/index.js</code>）</li>
+        <li>配置 Cursor / Claude MCP</li>
+      </ol>
+
+      <h3>3.2 仅开发模式（无 SolidWorks）</h3>
+      <pre>install.bat --mock-only</pre>
+
+      <h3>3.3 验证安装</h3>
+      <pre>node scripts\check-winax.mjs
+REM 期望输出: winax: OK
+
+npm run build
+node scripts\test-mcp-smoke.mjs --real</pre>
+    </section>
+
+    <section id="start">
+      <h2>4. 启动 MCP</h2>
+
+      <h3>4.1 在 Cursor 中使用（推荐）</h3>
+      <p>安装完成后，MCP 配置写入 <code>%USERPROFILE%\.cursor\mcp.json</code>。推荐配置示例：</p>
+      <pre>{
+  "mcpServers": {
+    "solidworks": {
+      "command": "C:/Program Files/nodejs/node.exe",
+      "args": [
+        "C:/Users/hands/Documents/GitHub/SolidworksMCP-TS/dist/index.js"
+      ],
+      "env": {
+        "SOLIDWORKS_PATH": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS",
+        "SOLIDWORKS_VERSION": "2023",
+        "ADAPTER_TYPE": "winax-enhanced",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}</pre>
+      <p><strong>启动步骤：</strong></p>
+      <ol>
+        <li>先启动 <strong>SolidWorks</strong>（保持运行）</li>
+        <li>完全关闭并重新打开 <strong>Cursor</strong></li>
+        <li>打开 <strong>Settings → MCP</strong>，确认 <code>solidworks</code> 显示为绿色/已连接</li>
+        <li>在 Agent 对话中即可调用 SolidWorks 工具</li>
+      </ol>
+
+      <h3>4.2 在 Claude Desktop 中使用</h3>
+      <p>配置文件路径：<code>%APPDATA%\Claude\claude_desktop_config.json</code>，格式与上方相同。修改后重启 Claude Desktop。</p>
+
+      <h3>4.3 手动启动（调试）</h3>
+      <pre>REM 使用 dev.bat（自动刷新 PATH）
+dev.bat
+
+REM 或直接运行编译后的服务
+set USE_MOCK_SOLIDWORKS=false
+node dist\index.js</pre>
+      <p>手动模式通过 stdio 与 MCP 客户端通信，通常仅供调试，日常使用请通过 Cursor 自动管理。</p>
+    </section>
+
+    <section id="usage">
+      <h2>5. 如何使用</h2>
+
+      <h3>5.1 在 Cursor 对话中的用法</h3>
+      <p>连接成功后，直接用自然语言描述 CAD 任务，AI 会自动选择并调用 MCP 工具。示例提示词：</p>
+      <table>
+        <thead>
+          <tr><th>你说</th><th>AI 调用的工具链</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>「新建一个零件」</td><td><code>create_part</code></td></tr>
+          <tr><td>「在前视基准面画一个半径 25mm 的圆」</td><td><code>create_sketch</code> → <code>sketch_circle</code></td></tr>
+          <tr><td>「拉伸 10mm」</td><td><code>create_extrusion</code></td></tr>
+          <tr><td>「导出为 STEP」</td><td><code>export_file</code></td></tr>
+          <tr><td>「生成批量导出 VBA 脚本」</td><td><code>generate_vba_script</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>5.2 典型建模流程</h3>
+      <div class="flow">
+        <span>create_part</span>
+        <span class="arrow">→</span>
+        <span>create_sketch</span>
+        <span class="arrow">→</span>
+        <span>sketch_circle / add_line</span>
+        <span class="arrow">→</span>
+        <span>create_extrusion</span>
+        <span class="arrow">→</span>
+        <span>export_file</span>
+      </div>
+
+      <h3>5.3 注意事项</h3>
+      <ul>
+        <li>执行任何工具前，MCP 会自动连接 SolidWorks（需 SolidWorks 已运行）</li>
+        <li>草图坐标单位为 <strong>毫米 (mm)</strong>，内部自动转换为米</li>
+        <li>首次调用可能较慢（COM 连接初始化）</li>
+        <li>若 MCP 面板显示红色，先检查 winax 和 Node 版本</li>
+      </ul>
+    </section>
+
+    <section id="tools">
+      <h2>6. 常用工具参考</h2>
+      <table>
+        <thead>
+          <tr><th>工具名</th><th>说明</th><th>关键参数</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>create_part</code></td><td>新建零件文档</td><td>无</td></tr>
+          <tr><td><code>create_sketch</code></td><td>在基准面创建草图</td><td>plane: Front/Top/Right</td></tr>
+          <tr><td><code>sketch_circle</code></td><td>绘制圆</td><td>center {x,y}, radius (mm)</td></tr>
+          <tr><td><code>add_line</code></td><td>绘制直线</td><td>start, end 坐标</td></tr>
+          <tr><td><code>create_extrusion</code></td><td>拉伸特征</td><td>depth, direction</td></tr>
+          <tr><td><code>open_model</code></td><td>打开已有文件</td><td>filePath</td></tr>
+          <tr><td><code>export_file</code></td><td>导出 STEP/STL/PDF 等</td><td>format, outputPath</td></tr>
+          <tr><td><code>generate_vba_script</code></td><td>生成 VBA 宏代码</td><td>template, parameters</td></tr>
+        </tbody>
+      </table>
+      <p>完整工具列表（86 个）可通过 <code>tools/list</code> MCP 请求或运行冒烟测试查看。</p>
+    </section>
+
+    <section id="test">
+      <h2>7. 测试方法</h2>
+
+      <h3>7.1 快速检查清单</h3>
+      <pre>cd C:\Users\hands\Documents\GitHub\SolidworksMCP-TS
+call scripts\ensure-path.bat
+
+REM 1. winax 原生模块
+node scripts\check-winax.mjs
+
+REM 2. MCP 协议（无需 SolidWorks 交互）
+set USE_MOCK_SOLIDWORKS=true
+node scripts\test-mcp-smoke.mjs
+
+REM 3. MCP 协议（真实模式）
+set USE_MOCK_SOLIDWORKS=false
+node scripts\test-mcp-smoke.mjs --real
+
+REM 4. 端到端：画圆（需 SolidWorks 运行）
+node scripts\test-draw-circle.mjs
+
+REM 5. SolidWorks COM 直连（绕过 MCP）
+cscript //nologo scripts\test-sw-circle.vbs
+
+REM 6. 单元测试
+set USE_MOCK_SOLIDWORKS=true
+npm test</pre>
+
+      <h3>7.2 在 Cursor 中手动验证</h3>
+      <ol>
+        <li>确认 MCP 面板 <code>solidworks</code> 为绿色</li>
+        <li>发送：「列出 SolidWorks MCP 有哪些工具？」</li>
+        <li>发送：「新建零件，在前视基准面画半径 30mm 的圆」</li>
+        <li>在 SolidWorks 窗口中确认草图出现</li>
+      </ol>
+    </section>
+
+    <section id="test-report">
+      <h2>8. 本次自动化测试报告</h2>
+      <p>测试时间：2026-06-11 · 测试环境：本机 Windows + SolidWorks 2023 + Node 20.20.2</p>
+      <div class="test-grid">
+        <div class="test-item">
+          <div class="status status-pass">✓ PASS</div>
+          <strong>winax 模块加载</strong>
+          <p><code>node scripts\check-winax.mjs</code><br>输出：winax: OK</p>
+        </div>
+        <div class="test-item">
+          <div class="status status-pass">✓ PASS</div>
+          <strong>MCP initialize</strong>
+          <p>服务器：solidworks-mcp-server v3.1.3</p>
+        </div>
+        <div class="test-item">
+          <div class="status status-pass">✓ PASS</div>
+          <strong>MCP tools/list</strong>
+          <p>共注册 86 个工具</p>
+        </div>
+        <div class="test-item">
+          <div class="status status-pass">✓ PASS</div>
+          <strong>create_part</strong>
+          <p>成功创建零件 Part1</p>
+        </div>
+        <div class="test-item">
+          <div class="status status-pass">✓ PASS</div>
+          <strong>create_sketch</strong>
+          <p>前视基准面草图创建成功</p>
+        </div>
+        <div class="test-item">
+          <div class="status status-pass">✓ PASS</div>
+          <strong>sketch_circle</strong>
+          <p>圆心 (0,0)，半径 25mm，面积 1963.5 mm²</p>
+        </div>
+      </div>
+      <div class="card card-ok" style="margin-top:1.25rem;">
+        <strong>结论：MCP 服务工作正常。</strong> 协议层、winax COM 连接、零件创建、草图绘制、画圆全流程均已通过。请在 SolidWorks 窗口中查看 Part1 上前视基准面的圆形草图。
+      </div>
+    </section>
+
+    <section id="troubleshoot">
+      <h2>9. 故障排除</h2>
+      <table>
+        <thead>
+          <tr><th>现象</th><th>原因</th><th>解决</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>npm</code> 找不到</td>
+            <td>Cursor 终端 PATH 未刷新</td>
+            <td>运行 <code>dev.bat</code> 或重启 Cursor；见 <code>scripts\ensure-path.bat</code></td>
+          </tr>
+          <tr>
+            <td>Cannot find module 'winax'</td>
+            <td>winax 未编译或 Node 版本不对</td>
+            <td><code>install.bat --install-deps</code>，确保 Node 20</td>
+          </tr>
+          <tr>
+            <td>winax 编译失败</td>
+            <td>缺少 Python / VS Build Tools</td>
+            <td>安装 Python 3.12 + VS C++ 工作负载</td>
+          </tr>
+          <tr>
+            <td>MCP 连接红色</td>
+            <td>服务启动崩溃</td>
+            <td>手动运行 <code>node dist\index.js</code> 查看错误；检查 winax</td>
+          </tr>
+          <tr>
+            <td>Failed to connect to SolidWorks</td>
+            <td>SolidWorks 未运行</td>
+            <td>先启动 SolidWorks，再调用工具</td>
+          </tr>
+          <tr>
+            <td>Node 24 不兼容</td>
+            <td>winax 原生模块限制</td>
+            <td><code>winget install OpenJS.NodeJS.20</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>更多细节见项目根目录 <code>TROUBLESHOOTING.md</code>。</p>
+    </section>
+
+    <footer>
+      <p>SolidWorks MCP Server · <a href="https://github.com/vespo92/SolidworksMCP-TS" style="color:var(--accent2)">GitHub</a> · MIT License</p>
+      <p>文档路径：<code>docs/USAGE_GUIDE.html</code> — 用浏览器直接打开即可阅读。</p>
+    </footer>
+  </main>
+</body>
+</html>
