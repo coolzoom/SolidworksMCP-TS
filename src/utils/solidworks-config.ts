@@ -16,6 +16,21 @@ export interface SolidWorksTemplates {
 }
 
 export class SolidWorksConfig {
+  /** Try multiple swUserPreferenceStringValue_e constants (SW version differences). */
+  private static tryGetPreferenceTemplate(swApp: any, ...preferenceTypes: number[]): string {
+    for (const preferenceType of preferenceTypes) {
+      try {
+        const templatePath = swApp.GetUserPreferenceStringValue(preferenceType);
+        if (templatePath) {
+          return templatePath;
+        }
+      } catch {
+        // Try next preference constant
+      }
+    }
+    return '';
+  }
+
   /**
    * Extract SolidWorks version information from the application
    */
@@ -61,10 +76,11 @@ export class SolidWorksConfig {
   static getDefaultTemplates(swApp: any): SolidWorksTemplates | null {
     try {
       // Strategy 1: Try to get user preference templates
+      // SW 2019+: part=8, assembly=9, drawing=10. Older builds may use 0/1/8.
       try {
-        const partTemplate = swApp.GetUserPreferenceStringValue(0); // swDefaultTemplatePart
-        const assemblyTemplate = swApp.GetUserPreferenceStringValue(1); // swDefaultTemplateAssembly
-        const drawingTemplate = swApp.GetUserPreferenceStringValue(8); // swDefaultTemplateDrawing
+        const partTemplate = SolidWorksConfig.tryGetPreferenceTemplate(swApp, 8, 0);
+        const assemblyTemplate = SolidWorksConfig.tryGetPreferenceTemplate(swApp, 9, 1);
+        const drawingTemplate = SolidWorksConfig.tryGetPreferenceTemplate(swApp, 10, 8);
 
         if (partTemplate && assemblyTemplate && drawingTemplate) {
           return {

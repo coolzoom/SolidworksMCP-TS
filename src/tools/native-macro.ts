@@ -7,6 +7,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import type { SolidWorksAPI } from '../solidworks/api.js';
+import { runMacro2 } from '../utils/com-helpers.js';
+import { writeTextMacroFile } from '../utils/macro-file.js';
 
 /**
  * Native macro recording tools that use SolidWorks' internal VBA engine
@@ -176,9 +178,6 @@ export const nativeMacroTools = [
           throw new Error(`Macro file not found: ${args.macroPath}`);
         }
 
-        // Determine run option
-        const runOption = args.unloadAfterRun ? 1 : 0; // swRunMacroOption_e
-
         // Run the macro
         let success: any;
         if (args.arguments && args.arguments.length > 0) {
@@ -186,8 +185,7 @@ export const nativeMacroTools = [
           const vbaApp = swApp.GetAddInObject('SldWorks.MacroRunner');
           success = vbaApp.RunMacroWithArguments(args.macroPath, args.moduleName, args.procedureName, args.arguments);
         } else {
-          // Run without arguments
-          success = swApp.RunMacro2(args.macroPath, args.moduleName, args.procedureName, runOption);
+          success = runMacro2(swApp, args.macroPath, args.moduleName, args.procedureName, args.unloadAfterRun);
         }
 
         if (!success) {
@@ -257,50 +255,16 @@ export const nativeMacroTools = [
       includeComments: z.boolean().default(true).describe('Include helpful comments'),
       template: z.enum(['basic', 'part', 'assembly', 'drawing']).default('basic').describe('Macro template type'),
     }),
-    handler: (args: any, swApi: SolidWorksAPI) => {
+    handler: (args: any, _swApi: SolidWorksAPI) => {
       try {
-        const swApp = swApi.getApp();
-        if (!swApp) throw new Error('SolidWorks application not connected');
-
-        // Ensure macro path has correct extension
         let macroPath = args.macroPath;
         if (!macroPath.toLowerCase().endsWith('.swp')) {
           macroPath = `${macroPath.replace(/\.[^.]*$/, '')}.swp`;
         }
 
-        // Create directory if needed
-        const dir = path.dirname(macroPath);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-
-        // Start recording to create proper VBA project
-        swApp.RecordMacro(macroPath);
-
-        // Immediately stop to get the initialized project
-        swApp.StopMacroRecording();
-
-        // Now edit the macro to add our template code
-        swApp.EditMacro(macroPath);
-
-        // Get VBA environment
-        const vbaEditor = swApp.GetAddInObject('VBA.Editor');
-        const vbaProject = vbaEditor.ActiveVBProject;
-        const codeModule = vbaProject.VBComponents('Module1').CodeModule;
-
-        // Clear existing code
-        if (codeModule.CountOfLines > 0) {
-          codeModule.DeleteLines(1, codeModule.CountOfLines);
-        }
-
-        // Build template code based on type
+        // Write plain-text macro (RecordMacro is unavailable via winax on many systems)
         const templateCode = generateMacroTemplate(args);
-
-        // Insert the template code
-        codeModule.InsertLines(1, templateCode);
-
-        // Save the macro
-        vbaProject.Save();
+        macroPath = writeTextMacroFile(macroPath, 'Module1', templateCode);
 
         return {
           success: true,
@@ -326,106 +290,39 @@ export const nativeMacroTools = [
       addInitialization: z.boolean().default(true).describe('Add SolidWorks initialization code'),
       addReferences: z.boolean().default(true).describe('Add required type library references'),
     }),
-    handler: (args: any, swApi: SolidWorksAPI) => {
+    handler: (args: any, _swApi: SolidWorksAPI) => {
       try {
-        const swApp = swApi.getApp();
-        if (!swApp) throw new Error('SolidWorks application not connected');
-
-        // Ensure output path has correct extension
         let outputPath = args.outputPath;
         if (!outputPath.toLowerCase().endsWith('.swp')) {
           outputPath = `${outputPath.replace(/\.[^.]*$/, '')}.swp`;
         }
 
-        // Create an initialized macro first
-        swApp.RecordMacro(outputPath);
-        swApp.StopMacroRecording();
-
-        // Open in editor
-        swApp.EditMacro(outputPath);
-
-        // Get VBA environment
-        const vbaEditor = swApp.GetAddInObject('VBA.Editor');
-        const vbaProject = vbaEditor.ActiveVBProject;
-
-        // Add required references if needed
-        if (args.addReferences) {
-          const references = vbaProject.References;
-
-          // Add SolidWorks type libraries if not present
-          const requiredRefs = [
-            'SldWorks 2024 Type Library',
-            'SldWorks 2024 Constant type library',
-            'SldWorks 2024 Commands type library',
-          ];
-
-          for (const refName of requiredRefs) {
-            try {
-              references.AddFromGuid(getSolidWorksTypeLibGuid(refName), 0, 0);
-            } catch {
-              // Reference might already exist
-            }
-          }
-        }
-
-        // Get the code module
-        const codeModule = vbaProject.VBComponents('Module1').CodeModule;
-
-        // Clear existing code
-        if (codeModule.CountOfLines > 0) {
-          codeModule.DeleteLines(1, codeModule.CountOfLines);
-        }
-
-        // Process the VBA code
         let processedCode = args.vbaCode;
 
-        // Add initialization if needed
         if (args.addInitialization && !processedCode.includes('Dim swApp')) {
-          const initCode = `
-' ${args.macroName}
+          processedCode = `' ${args.macroName}
 ' Converted from text VBA by SolidWorks MCP Server
 ' Date: ${new Date().toISOString()}
 
 Option Explicit
 
-' SolidWorks Variables
-Dim swApp As SldWorks.SldWorks
-Dim swModel As SldWorks.ModelDoc2
-Dim swPart As SldWorks.PartDoc
-Dim swAssembly As SldWorks.AssemblyDoc
-Dim swDrawing As SldWorks.DrawingDoc
+Dim swApp As Object
+Dim swModel As Object
+Dim swFeatureMgr As Object
 Dim boolStatus As Boolean
-Dim longStatus As Long, longWarnings As Long
 
-`;
-          processedCode = initCode + processedCode;
+${processedCode}`;
         }
 
-        // Ensure main subroutine exists
         if (!processedCode.includes('Sub main')) {
-          processedCode =
-            processedCode +
-            `
+          processedCode = `${processedCode}
 
 Sub main()
-    Set swApp = Application.SldWorks
-    Set swModel = swApp.ActiveDoc
-    
-    If swModel Is Nothing Then
-        MsgBox "Please open a document first."
-        Exit Sub
-    End If
-    
-    ' Call your main procedure here
     ${args.macroName}
 End Sub`;
         }
 
-        // Insert the processed code
-        codeModule.InsertLines(1, processedCode);
-
-        // Save the macro
-        vbaProject.Save();
+        outputPath = writeTextMacroFile(outputPath, 'Module1', processedCode);
 
         return {
           success: true,
@@ -433,8 +330,9 @@ End Sub`;
           outputPath,
           macroName: args.macroName,
           linesOfCode: processedCode.split('\n').length,
-          referencesAdded: args.addReferences,
+          referencesAdded: false,
           initializationAdded: args.addInitialization,
+          note: 'Plain-text .swp written (compatible with RunMacro2 fallback path)',
         };
       } catch (error) {
         return `Failed to convert text to native macro: ${error}`;
@@ -494,12 +392,7 @@ End Sub`;
             }
 
             // Run the macro
-            const success = swApp.RunMacro2(
-              macro.path,
-              macro.module,
-              macro.procedure,
-              1 // Unload after run
-            );
+            const success = runMacro2(swApp, macro.path, macro.module, macro.procedure, true);
 
             if (!success) {
               throw new Error('Macro execution failed');

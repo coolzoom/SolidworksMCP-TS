@@ -86,6 +86,23 @@ export const modelingTools = [
   },
 
   {
+    name: 'create_revolve',
+    description: 'Create a revolve feature from the active sketch profile',
+    inputSchema: z.object({
+      angle: z.number().default(360).describe('Revolve angle in degrees'),
+      reverse: z.boolean().default(false).describe('Reverse direction'),
+    }),
+    handler: (args: any, swApi: SolidWorksAPI) => {
+      try {
+        const feature = swApi.createRevolve(args.angle, args.reverse);
+        return `Created revolve: ${feature.name}`;
+      } catch (error) {
+        return `Failed to create revolve: ${error}`;
+      }
+    },
+  },
+
+  {
     name: 'get_dimension',
     description: 'Get the value of a dimension',
     inputSchema: z.object({

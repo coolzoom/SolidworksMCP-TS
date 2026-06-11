@@ -41,6 +41,9 @@ export const sketchTools = [
       try {
         const model = swApi.getCurrentModel();
         if (!model) throw new Error('No active model');
+        if (!model.SketchManager) {
+          throw new Error('Cannot access SketchManager - open a part or assembly document first');
+        }
 
         // For now, let's use a simpler approach without SelectByID2
         // SolidWorks will use the Front plane by default if no plane is selected
@@ -88,12 +91,11 @@ export const sketchTools = [
               // If feature selection didn't work, just proceed
               // SolidWorks often defaults to Front plane anyway
               if (!selected && args.plane !== 'Front') {
-                console.log(`Note: Could not select ${args.plane} plane, using default`);
+                // Non-default plane not selected; SolidWorks may use Front anyway
               }
             }
           } catch (_e) {
             // Plane selection failed, but continue anyway
-            console.log('Note: Plane selection failed, using default');
           }
 
           // Create offset plane if needed

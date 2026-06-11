@@ -2,7 +2,9 @@ import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadWinax } from '../adapters/winax-loader.js';
+import { coerceComNumber, runMacro2 } from '../utils/com-helpers.js';
 import { logger } from '../utils/logger.js';
+import { SolidWorksConfig } from '../utils/solidworks-config.js';
 import type { SolidWorksFeature, SolidWorksModel } from './types.js';
 
 let winax: any = null;
@@ -136,22 +138,35 @@ export class SolidWorksAPI {
   createPart(): SolidWorksModel {
     if (!this.swApp) throw new Error('Not connected to SolidWorks');
 
-    // Create new part document - use NewPart() which works better
-    this.currentModel = this.swApp.NewPart();
+    this.currentModel = null;
+
+    // NewPart() is not exposed on all winax COM bindings — try it, then fall back
+    try {
+      if (typeof this.swApp.NewPart === 'function') {
+        this.currentModel = this.swApp.NewPart();
+      }
+    } catch (_e) {
+      this.currentModel = null;
+    }
 
     if (!this.currentModel) {
-      // Fallback to NewDocument if NewPart fails
-      const template = this.swApp.GetUserPreferenceStringValue(8) || '';
-      if (template) {
-        this.currentModel = this.swApp.NewDocument(template, 0, 0, 0);
-      } else {
-        throw new Error('Failed to create new part - no template available');
+      const template = SolidWorksConfig.getTemplatePath(this.swApp, 'part');
+      this.currentModel = this.swApp.NewDocument(template, 0, 0, 0);
+      if (!this.currentModel) {
+        throw new Error('Failed to create new part - NewDocument returned null');
       }
+    }
+
+    let title = 'Part';
+    try {
+      title = this.currentModel.GetTitle?.() ?? title;
+    } catch (_e) {
+      // Use default title
     }
 
     return {
       path: '',
-      name: this.currentModel.GetTitle,
+      name: title,
       type: 'Part',
       isActive: true,
     };
@@ -210,240 +225,64 @@ export class SolidWorksAPI {
 
   // Feature operations
   createExtrude(depth: number, _draft: number = 0, reverse: boolean = false): SolidWorksFeature {
+    this.ensureCurrentModel();
     if (!this.currentModel) throw new Error('No model open');
 
     try {
-      // Get the feature manager
       const featureMgr = this.currentModel.FeatureManager;
-      if (!featureMgr) {
-        throw new Error('Cannot access FeatureManager');
+      if (!featureMgr) throw new Error('Cannot access FeatureManager');
+
+      const sketchMgr = this.currentModel.SketchManager;
+      if (sketchMgr?.ActiveSketch) {
+        sketchMgr.InsertSketch(true);
       }
 
-      // Make sure we're not in sketch edit mode
-      try {
-        const sketchMgr = this.currentModel.SketchManager;
-        const activeSketch = sketchMgr.ActiveSketch;
-        if (activeSketch) {
-          // Exit sketch mode
-          sketchMgr.InsertSketch(true);
-        }
-      } catch (_e) {
-        // Continue if no active sketch
+      this.currentModel.ClearSelection2(true);
+
+      if (!this.selectLatestSketchFeature()) {
+        throw new Error('No sketch found to extrude');
       }
 
-      // Clear selections first
-      try {
-        this.currentModel.ClearSelection2(true);
-      } catch (_e) {
-        // Continue
-      }
-
-      // Select the sketch - try multiple methods with detailed logging
-      let sketchSelected = false;
-      let selectedSketchName = '';
-      const attemptedSketches: string[] = [];
-
-      // Method 1 (most reliable): Feature tree traversal
-      // This avoids SelectByID2 COM type mismatch issues entirely
-      try {
-        const featureCount = this.currentModel.GetFeatureCount();
-        logger.info(`Searching ${featureCount} features for sketch...`);
-
-        for (let i = 0; i < Math.min(10, featureCount); i++) {
-          const feat = this.currentModel.FeatureByPositionReverse(i);
-          if (feat) {
-            const typeName = feat.GetTypeName2();
-            const featName = feat.Name || feat.GetName();
-
-            if (typeName === 'ProfileFeature' || typeName?.toLowerCase().includes('sketch')) {
-              feat.Select2(false, 0);
-              sketchSelected = true;
-              selectedSketchName = featName || `Feature at position ${i}`;
-              logger.info(`Selected sketch by feature tree: ${selectedSketchName}`);
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        logger.warn(`Feature tree search failed: ${e}`);
-      }
-
-      // Method 2 (fallback): SelectByID2 with undefined for optional params
-      if (!sketchSelected) {
-        const sketchNames = ['Sketch1', 'Sketch2', 'Sketch3', 'Sketch4', 'Sketch5'];
-        for (const name of sketchNames) {
-          try {
-            const ext = this.currentModel.Extension;
-            if (ext) {
-              const selected = ext.SelectByID2(name, 'SKETCH', 0, 0, 0, false, 0, undefined, 0);
-              if (selected) {
-                sketchSelected = true;
-                selectedSketchName = name;
-                logger.info(`Selected sketch via SelectByID2: ${name}`);
-                break;
-              } else {
-                attemptedSketches.push(name);
-              }
-            }
-          } catch (e) {
-            attemptedSketches.push(`${name} (error: ${e})`);
-          }
-        }
-      }
-
-      if (!sketchSelected) {
-        const errorMessage =
-          `No sketch found to extrude. Attempted sketches: ${attemptedSketches.join(', ')}. ` +
-          `Please ensure a sketch exists or specify the sketch name explicitly.`;
-        logger.error(errorMessage);
-        throw new Error(errorMessage);
-      }
-
-      logger.info(`Using sketch: ${selectedSketchName}`);
-
-      // Convert depth to meters
       const depthInMeters = depth / 1000;
-
-      let feature = null;
-
-      // Try different extrusion methods
-      // The winax library has issues with methods that have many parameters
-      // We'll try to use a workaround by creating a variant array
-      try {
-        // Method 1: Try the basic FeatureExtrusion with minimal params
-        // This uses a different calling convention that might work better
-        const args = [
-          true, // Sd (single direction)
-          reverse, // Flip
-          false, // Dir
-          0, // T1 (0 = blind)
-          0, // T2
-          depthInMeters, // D1 (depth)
-          0, // D2
-          false, // Dchk1
-          false, // Dchk2
-          false, // Ddir1
-          false, // Ddir2
-          0, // Dang1
-          0, // Dang2
-        ];
-
-        // Try to invoke the method directly
-        feature = featureMgr.FeatureExtrusion.apply(featureMgr, args);
-        logger.info('FeatureExtrusion succeeded with apply');
-      } catch (e) {
-        logger.warn(`FeatureExtrusion with apply failed: ${e}`);
-
-        // Method 2: Try using the __methods__ property if available
-        try {
-          // Some COM objects expose methods differently
-          if (featureMgr.__methods__?.FeatureExtrusion) {
-            feature = featureMgr.__methods__.FeatureExtrusion(
-              true,
-              reverse,
-              false,
-              0,
-              0,
-              depthInMeters,
-              0,
-              false,
-              false,
-              false,
-              false,
-              0,
-              0
-            );
-            logger.info('FeatureExtrusion succeeded via __methods__');
-          } else {
-            throw new Error('__methods__ not available');
-          }
-        } catch (e2) {
-          logger.warn(`Alternative method failed: ${e2}`);
-
-          // Method 3: Try to create the extrusion using automation-compatible approach
-          try {
-            // Last resort: Try with explicit VARIANT conversion if available
-            const variant = winax.Variant;
-            if (variant) {
-              const params = new variant([
-                true,
-                reverse,
-                false,
-                0,
-                0,
-                depthInMeters,
-                0,
-                false,
-                false,
-                false,
-                false,
-                0,
-                0,
-              ]);
-              feature = featureMgr.FeatureExtrusion(params);
-              logger.info('FeatureExtrusion succeeded with VARIANT');
-            } else {
-              // Final fallback: standard call
-              feature = featureMgr.FeatureExtrusion(
-                true,
-                reverse,
-                false,
-                0,
-                0,
-                depthInMeters,
-                0,
-                false,
-                false,
-                false,
-                false,
-                0,
-                0
-              );
-              logger.info('FeatureExtrusion succeeded with standard call');
-            }
-          } catch (e3) {
-            logger.warn(`All direct COM extrusion methods failed: ${e3}`);
-            logger.info('Falling back to VBA macro execution for extrusion...');
-
-            // Method 4: VBA macro fallback - bypasses winax parameter limit
-            feature = this.executeExtrusionViaMacro(depthInMeters, reverse);
-          }
-        }
-      }
+      const feature = featureMgr.FeatureExtrusion3(
+        true,
+        reverse,
+        false,
+        0,
+        0,
+        depthInMeters,
+        0,
+        false,
+        false,
+        false,
+        false,
+        0,
+        0,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        0,
+        0,
+        false
+      );
 
       if (!feature) {
-        throw new Error('Failed to create extrusion - feature is null');
+        throw new Error('FeatureExtrusion3 returned null - ensure the sketch profile is closed');
       }
 
-      // Get feature name
       let featureName = 'Boss-Extrude1';
       try {
-        if (feature.Name) {
-          featureName = feature.Name;
-        } else if (feature.GetName) {
-          featureName = feature.GetName();
-        }
+        featureName = feature.Name || feature.GetName?.() || featureName;
       } catch (_e) {
         // Use default name
       }
 
-      // Clear selections
-      try {
-        this.currentModel.ClearSelection2(true);
-      } catch (_e) {
-        // Ignore
-      }
-
-      // Rebuild
-      try {
-        this.currentModel.EditRebuild3();
-      } catch (_e) {
-        try {
-          this.currentModel.EditRebuild();
-        } catch (_e2) {
-          // Continue
-        }
-      }
+      this.currentModel.ClearSelection2(true);
+      this.currentModel.EditRebuild3();
 
       return {
         name: featureName,
@@ -453,6 +292,183 @@ export class SolidWorksAPI {
     } catch (error) {
       throw new Error(`Extrusion failed: ${error}`);
     }
+  }
+
+  createRevolve(angle = 360, reverse = false): SolidWorksFeature {
+    this.ensureCurrentModel();
+    if (!this.currentModel) throw new Error('No active model');
+    return this.createRevolveDirect(angle, reverse);
+  }
+
+  private selectLatestSketchFeature(): boolean {
+    try {
+      const featureCount = this.currentModel.GetFeatureCount();
+      for (let i = 0; i < Math.min(10, featureCount); i++) {
+        const feat = this.currentModel.FeatureByPositionReverse(i);
+        if (feat) {
+          const typeName = feat.GetTypeName2?.() || '';
+          if (typeName === 'ProfileFeature' || typeName.toLowerCase().includes('sketch')) {
+            feat.Select2(false, 0);
+            return true;
+          }
+        }
+      }
+    } catch (_e) {
+      // Fall through to name-based selection
+    }
+
+    const sketchNames = ['Sketch1', 'Sketch2', 'Sketch3', 'Sketch4', 'Sketch5'];
+    for (const name of sketchNames) {
+      try {
+        const selected = this.currentModel.Extension.SelectByID2(name, 'SKETCH', 0, 0, 0, false, 0, undefined, 0);
+        if (selected) return true;
+      } catch (_e) {
+        // Try next name
+      }
+    }
+
+    return false;
+  }
+
+  private createRevolveDirect(angle: number, reverse: boolean): SolidWorksFeature {
+    const sketchMgr = this.currentModel.SketchManager;
+    if (sketchMgr?.ActiveSketch) {
+      sketchMgr.InsertSketch(true);
+    }
+
+    this.currentModel.ClearSelection2(true);
+
+    if (!this.selectLatestSketchFeature()) {
+      throw new Error('No sketch found for revolve');
+    }
+
+    const angleRad = (angle * Math.PI) / 180;
+    const feature = this.currentModel.FeatureManager.FeatureRevolve(
+      reverse,
+      false,
+      angleRad,
+      0,
+      false,
+      false,
+      false,
+      true
+    );
+
+    if (!feature) {
+      throw new Error(
+        'FeatureRevolve returned null. Revolve on SW 2023 via winax requires selecting a centerline axis, ' +
+          'which currently crashes the COM bridge. Complete the revolve manually in SolidWorks, or use extrusion workflows.'
+      );
+    }
+
+    let featureName = 'Revolve1';
+    try {
+      featureName = feature.Name || feature.GetName?.() || featureName;
+    } catch (_e) {
+      // Use default name
+    }
+
+    this.currentModel.ClearSelection2(true);
+    this.currentModel.EditRebuild3();
+
+    return {
+      name: featureName,
+      type: 'Revolution',
+      suppressed: false,
+    };
+  }
+
+  private executeRevolveViaMacro(angle: number, reverse: boolean): SolidWorksFeature {
+    const macroDir = join(tmpdir(), 'solidworks-mcp-macros');
+    const macroPath = join(macroDir, `revolve_${Date.now()}.swp`);
+
+    try {
+      mkdirSync(macroDir, { recursive: true });
+    } catch (_e) {
+      // Directory may already exist
+    }
+
+    const angleRad = (angle * Math.PI) / 180;
+
+    const vbaCode = `Attribute VB_Name = "Module1"
+Option Explicit
+
+Sub CreateRevolveSphere()
+    Dim swApp As Object
+    Dim swModel As Object
+    Dim swFeatureMgr As Object
+    Dim swFeature As Object
+    Dim feat As Object
+    Dim swSketch As Object
+    Dim vSegs As Variant
+    Dim seg As Object
+    Dim i As Long
+
+    On Error GoTo ErrorHandler
+
+    Set swApp = Application.SldWorks
+    Set swModel = swApp.ActiveDoc
+    If swModel Is Nothing Then Exit Sub
+
+    Set swFeatureMgr = swModel.FeatureManager
+    swModel.ClearSelection2 True
+
+    Set feat = swModel.FeatureByPositionReverse(0)
+    If feat Is Nothing Then GoTo ErrorHandler
+    feat.Select2 False, 0
+
+    Set swSketch = feat.GetSpecificFeature2
+    vSegs = swSketch.GetSketchSegments
+    For i = 0 To UBound(vSegs)
+        Set seg = vSegs(i)
+        If seg.ConstructionGeometry Then
+            seg.Select4 True, Nothing
+            Exit For
+        End If
+    Next i
+
+    Set swFeature = swFeatureMgr.FeatureRevolve2( _
+        False, _
+        ${reverse ? 'True' : 'False'}, _
+        ${angleRad}, _
+        0, _
+        0, _
+        0, _
+        True, _
+        True, _
+        0, _
+        0)
+
+    If swFeature Is Nothing Then GoTo ErrorHandler
+
+    swModel.EditRebuild3
+    swModel.ViewZoomtofit2
+    Exit Sub
+
+ErrorHandler:
+    Debug.Print "Revolve macro error: " & Err.Description
+End Sub
+`;
+
+    writeFileSync(macroPath, vbaCode, 'utf-8');
+    logger.info(`Wrote revolve macro to ${macroPath}`);
+
+    const runResult = runMacro2(this.swApp, macroPath, 'Module1', 'CreateRevolveSphere', true);
+    logger.info(`RunMacro2 returned: ${runResult}`);
+
+    const feature = this.currentModel.FeatureByPositionReverse(0);
+    if (feature) {
+      const typeName = feature.GetTypeName2?.() || '';
+      if (typeName.toLowerCase().includes('revol') || typeName.toLowerCase().includes('boss')) {
+        return {
+          name: feature.Name || feature.GetName?.() || 'Revolve1',
+          type: 'Revolution',
+          suppressed: false,
+        };
+      }
+    }
+
+    throw new Error('Revolve macro executed but no revolve feature found');
   }
 
   /**
@@ -532,13 +548,7 @@ End Sub
       logger.info(`Wrote extrusion macro to ${macroPath}`);
 
       // Execute the macro via SolidWorks RunMacro2
-      const runResult = this.swApp.RunMacro2(
-        macroPath,
-        'Module1',
-        'CreateExtrusion',
-        1, // swRunMacroOption_e.swRunMacroUnloadAfterRun
-        0 // error out param
-      );
+      const runResult = runMacro2(this.swApp, macroPath, 'Module1', 'CreateExtrusion', true);
       logger.info(`RunMacro2 returned: ${runResult}`);
 
       // Retrieve the newly created feature (should be the most recent)
@@ -872,15 +882,7 @@ End Sub
   runMacro(macroPath: string, moduleName: string, procedureName: string, _args: any[] = []): any {
     if (!this.swApp) throw new Error('Not connected to SolidWorks');
 
-    const result = this.swApp.RunMacro2(
-      macroPath,
-      moduleName,
-      procedureName,
-      1, // swRunMacroOption
-      0 // error
-    );
-
-    return result;
+    return runMacro2(this.swApp, macroPath, moduleName, procedureName, true);
   }
 
   // Mass properties
@@ -941,19 +943,19 @@ End Sub
       const result: any = {};
 
       try {
-        result.mass = massProps.Mass;
+        result.mass = coerceComNumber(massProps.Mass);
       } catch (_e) {
         result.mass = 0;
       }
 
       try {
-        result.volume = massProps.Volume;
+        result.volume = coerceComNumber(massProps.Volume);
       } catch (_e) {
         result.volume = 0;
       }
 
       try {
-        result.surfaceArea = massProps.SurfaceArea;
+        result.surfaceArea = coerceComNumber(massProps.SurfaceArea);
       } catch (_e) {
         result.surfaceArea = 0;
       }
@@ -962,9 +964,9 @@ End Sub
         const com = massProps.CenterOfMass;
         if (com && Array.isArray(com) && com.length >= 3) {
           result.centerOfMass = {
-            x: com[0] * 1000, // Convert to mm
-            y: com[1] * 1000,
-            z: com[2] * 1000,
+            x: coerceComNumber(com[0]) * 1000,
+            y: coerceComNumber(com[1]) * 1000,
+            z: coerceComNumber(com[2]) * 1000,
           };
         } else {
           result.centerOfMass = { x: 0, y: 0, z: 0 };
@@ -974,7 +976,7 @@ End Sub
       }
 
       try {
-        result.density = massProps.Density;
+        result.density = coerceComNumber(massProps.Density);
       } catch (_e) {
         result.density = 0;
       }
@@ -1004,6 +1006,16 @@ End Sub
     }
   }
 
+  private isValidModelDoc(doc: any): boolean {
+    if (!doc) return false;
+    try {
+      doc.GetType();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // Helper to ensure current model is set
   private ensureCurrentModel(): void {
     if (!this.swApp) return;
@@ -1011,19 +1023,18 @@ End Sub
     // Always try to sync with the active document
     try {
       const activeDoc = this.swApp.ActiveDoc;
-      if (activeDoc) {
-        // Check if the active doc has changed
+      if (this.isValidModelDoc(activeDoc)) {
         if (!this.currentModel || this.currentModel !== activeDoc) {
           this.currentModel = activeDoc;
         }
-      } else if (!this.currentModel) {
+      } else if (!this.isValidModelDoc(this.currentModel)) {
+        this.currentModel = null;
         // No active doc and no current model - try to get any open doc
         try {
           const docCount = this.swApp.GetDocumentCount();
           if (docCount > 0) {
-            // Get the first document
             const docs = this.swApp.GetDocuments();
-            if (docs && docs.length > 0) {
+            if (docs && docs.length > 0 && this.isValidModelDoc(docs[0])) {
               this.currentModel = docs[0];
             }
           }
@@ -1032,15 +1043,13 @@ End Sub
         }
       }
     } catch (_e) {
-      // ActiveDoc might throw if no documents are open
-      // Keep the current model if we have one
-      if (!this.currentModel) {
-        // Try alternative methods to get a document
+      if (!this.isValidModelDoc(this.currentModel)) {
+        this.currentModel = null;
         try {
           const frame = this.swApp.Frame();
           if (frame) {
             const modelWindow = frame.ModelWindow();
-            if (modelWindow) {
+            if (modelWindow && this.isValidModelDoc(modelWindow.ModelDoc)) {
               this.currentModel = modelWindow.ModelDoc;
             }
           }

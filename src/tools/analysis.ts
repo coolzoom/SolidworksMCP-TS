@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SolidWorksAPI } from '../solidworks/api.js';
+import { coerceComNumber } from '../utils/com-helpers.js';
 
 export const analysisTools = [
   {
@@ -13,15 +14,15 @@ export const analysisTools = [
         const props = swApi.getMassProperties();
 
         // Convert mass based on units, guard against null from sketch-only docs
-        let mass = props.mass ?? 0;
+        let mass = coerceComNumber(props.mass);
         if (args.units === 'g') mass *= 1000;
         if (args.units === 'lb') mass *= 2.20462;
 
-        const volume = props.volume ?? 0;
-        const surfaceArea = props.surfaceArea ?? 0;
-        const comX = props.centerOfMass?.x ?? 0;
-        const comY = props.centerOfMass?.y ?? 0;
-        const comZ = props.centerOfMass?.z ?? 0;
+        const volume = coerceComNumber(props.volume);
+        const surfaceArea = coerceComNumber(props.surfaceArea);
+        const comX = coerceComNumber(props.centerOfMass?.x);
+        const comY = coerceComNumber(props.centerOfMass?.y);
+        const comZ = coerceComNumber(props.centerOfMass?.z);
 
         return {
           mass: `${mass.toFixed(3)} ${args.units}`,
