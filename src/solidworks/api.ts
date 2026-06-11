@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadWinax } from '../adapters/winax-loader.js';
 import { logger } from '../utils/logger.js';
+import { SolidWorksConfig } from '../utils/solidworks-config.js';
+import { executeRevolveViaScriptBridge, setPartColorViaScriptBridge } from '../utils/sw-com-bridge.js';
 import type { SolidWorksFeature, SolidWorksModel } from './types.js';
 
 let winax: any = null;
@@ -19,20 +21,29 @@ export class SolidWorksAPI {
   connect(): void {
     if (!winax) winax = loadWinax();
     try {
-      // Create or get running instance of SolidWorks
       this.swApp = new winax.Object('SldWorks.Application');
       this.swApp.Visible = true;
-      logger.info('Connected to SolidWorks');
     } catch (_error) {
-      // Try alternative connection method
       try {
         this.swApp = winax.Object('SldWorks.Application');
         this.swApp.Visible = true;
-        logger.info('Connected to SolidWorks (alternative method)');
       } catch (error2) {
         logger.error('Failed to connect to SolidWorks', error2);
         throw new Error(`Failed to connect to SolidWorks: ${error2}`);
       }
+    }
+
+    try {
+      const revision = this.swApp.RevisionNumber?.() ?? 'unknown';
+      logger.info(`Connected to SolidWorks (${revision})`);
+    } catch (_e) {
+      logger.info('Connected to SolidWorks');
+    }
+
+    if (typeof this.swApp.NewDocument !== 'function') {
+      throw new Error(
+        'Invalid SolidWorks COM connection: NewDocument unavailable. Ensure SolidWorks 2026 is installed and running.'
+      );
     }
   }
 
@@ -136,25 +147,35 @@ export class SolidWorksAPI {
   createPart(): SolidWorksModel {
     if (!this.swApp) throw new Error('Not connected to SolidWorks');
 
-    // Create new part document - use NewPart() which works better
-    this.currentModel = this.swApp.NewPart();
+    const template = SolidWorksConfig.getTemplatePath(this.swApp, 'part');
+    this.currentModel = this.swApp.NewDocument(template, 0, 0, 0);
 
-    if (!this.currentModel) {
-      // Fallback to NewDocument if NewPart fails
-      const template = this.swApp.GetUserPreferenceStringValue(8) || '';
-      if (template) {
-        this.currentModel = this.swApp.NewDocument(template, 0, 0, 0);
-      } else {
-        throw new Error('Failed to create new part - no template available');
-      }
+    if (!this.isValidModel(this.currentModel)) {
+      throw new Error('Failed to create new part - NewDocument returned invalid document');
+    }
+
+    let name = 'Part';
+    try {
+      name = this.currentModel.GetTitle?.() || this.currentModel.GetTitle() || name;
+    } catch (_e) {
+      // use default
     }
 
     return {
       path: '',
-      name: this.currentModel.GetTitle,
+      name,
       type: 'Part',
       isActive: true,
     };
+  }
+
+  private isValidModel(model: any): boolean {
+    if (!model) return false;
+    try {
+      return typeof model.GetTitle === 'function';
+    } catch {
+      return false;
+    }
   }
 
   // Macro support methods
@@ -301,12 +322,43 @@ export class SolidWorksAPI {
 
       logger.info(`Using sketch: ${selectedSketchName}`);
 
-      // Convert depth to meters
       const depthInMeters = depth / 1000;
-
       let feature = null;
 
-      // Try different extrusion methods
+      // SW 2023–2026: FeatureExtrusion3 (23 params) is the reliable direct COM path
+      try {
+        feature = featureMgr.FeatureExtrusion3(
+          true,
+          reverse,
+          false,
+          0,
+          0,
+          depthInMeters,
+          0,
+          false,
+          false,
+          false,
+          false,
+          0,
+          0,
+          false,
+          false,
+          false,
+          false,
+          true,
+          true,
+          true,
+          0,
+          0,
+          false
+        );
+        if (feature) logger.info('FeatureExtrusion3 succeeded');
+      } catch (e) {
+        logger.warn(`FeatureExtrusion3 failed: ${e}`);
+      }
+
+      if (!feature) {
+      // Try different extrusion methods (legacy fallbacks)
       // The winax library has issues with methods that have many parameters
       // We'll try to use a workaround by creating a variant array
       try {
@@ -410,6 +462,7 @@ export class SolidWorksAPI {
           }
         }
       }
+      }
 
       if (!feature) {
         throw new Error('Failed to create extrusion - feature is null');
@@ -453,6 +506,70 @@ export class SolidWorksAPI {
     } catch (error) {
       throw new Error(`Extrusion failed: ${error}`);
     }
+  }
+
+  createRevolve(angle = 360, reverse = false, axisPickYMeters = 0.001): SolidWorksFeature {
+    this.ensureCurrentModel();
+    if (!this.currentModel) throw new Error('No active model');
+
+    const sketchMgr = this.currentModel.SketchManager;
+    if (sketchMgr?.ActiveSketch) {
+      sketchMgr.InsertSketch(true);
+    }
+
+    this.currentModel.ClearSelection2(true);
+    if (!this.selectLatestSketchFeature()) {
+      throw new Error('No sketch found for revolve');
+    }
+
+    let docTitle = 'ActiveDoc';
+    try {
+      docTitle = this.currentModel.GetTitle?.() || this.currentModel.GetTitle() || docTitle;
+    } catch (_e) {
+      // use default
+    }
+
+    const bridge = executeRevolveViaScriptBridge(docTitle, angle, reverse, axisPickYMeters);
+    if (bridge.success && bridge.featureName) {
+      return { name: bridge.featureName, type: 'Revolution', suppressed: false };
+    }
+    throw new Error(bridge.error || 'Revolve failed');
+  }
+
+  setPartColor(r = 0, g = 0, b = 0): void {
+    this.ensureCurrentModel();
+    if (!this.currentModel) throw new Error('No active model');
+
+    let docTitle = 'ActiveDoc';
+    try {
+      docTitle = this.currentModel.GetTitle?.() || this.currentModel.GetTitle() || docTitle;
+    } catch (_e) {
+      // use default
+    }
+
+    const result = setPartColorViaScriptBridge(docTitle, r, g, b);
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to set part color');
+    }
+  }
+
+  private selectLatestSketchFeature(): boolean {
+    try {
+      const featureCount = this.currentModel.GetFeatureCount();
+      for (let i = 0; i < Math.min(10, featureCount); i++) {
+        const feat = this.currentModel.FeatureByPositionReverse(i);
+        if (feat) {
+          const typeName = feat.GetTypeName2?.() || '';
+          if (typeName === 'ProfileFeature' || typeName.toLowerCase().includes('sketch')) {
+            feat.Select2(false, 0);
+            return true;
+          }
+        }
+      }
+    } catch (_e) {
+      // fall through
+    }
+    return false;
   }
 
   /**

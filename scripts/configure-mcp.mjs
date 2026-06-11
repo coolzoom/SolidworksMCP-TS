@@ -89,7 +89,7 @@ async function main() {
 
   const swPath = (dotEnv.SOLIDWORKS_PATH || detectSolidWorksPath()).replace(/\\/g, '/');
   const swPathForEnv = process.platform === 'win32' ? swPath.replace(/\//g, '\\') : swPath;
-  const swVersion = dotEnv.SOLIDWORKS_VERSION || '2024';
+  const swVersion = dotEnv.SOLIDWORKS_VERSION || '2026';
 
   let nodeCommand = 'node';
   if (dotEnv.NODE_WINAX_PATH) {

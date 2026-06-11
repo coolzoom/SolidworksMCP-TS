@@ -420,9 +420,9 @@ export const DefaultConfiguration = {
     OperationTimeout: 60000, // milliseconds
   },
   Templates: {
-    DefaultPartTemplate: 'C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2023\\templates\\Part.prtdot',
-    DefaultAssemblyTemplate: 'C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2023\\templates\\Assembly.asmdot',
-    DefaultDrawingTemplate: 'C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2023\\templates\\Drawing.drwdot',
+    DefaultPartTemplate: 'C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2026\\templates\\Part.prtdot',
+    DefaultAssemblyTemplate: 'C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2026\\templates\\Assembly.asmdot',
+    DefaultDrawingTemplate: 'C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2026\\templates\\Drawing.drwdot',
   },
 } as const;
 

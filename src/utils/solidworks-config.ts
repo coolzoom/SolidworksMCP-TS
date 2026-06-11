@@ -3,6 +3,7 @@
  * Provides version detection and path resolution for SolidWorks installations
  */
 
+import { existsSync } from 'node:fs';
 export interface SolidWorksVersion {
   year: string;
   majorVersion: number;
@@ -60,21 +61,31 @@ export class SolidWorksConfig {
    */
   static getDefaultTemplates(swApp: any): SolidWorksTemplates | null {
     try {
-      // Strategy 1: Try to get user preference templates
-      try {
-        const partTemplate = swApp.GetUserPreferenceStringValue(0); // swDefaultTemplatePart
-        const assemblyTemplate = swApp.GetUserPreferenceStringValue(1); // swDefaultTemplateAssembly
-        const drawingTemplate = swApp.GetUserPreferenceStringValue(8); // swDefaultTemplateDrawing
-
-        if (partTemplate && assemblyTemplate && drawingTemplate) {
-          return {
-            part: partTemplate,
-            assembly: assemblyTemplate,
-            drawing: drawingTemplate,
-          };
+      // Strategy 1: User preference templates (SW 2019+ uses 8/9/10; older uses 0/1/8)
+      for (const [partId, asmId, drwId] of [
+        [8, 9, 10],
+        [0, 1, 8],
+      ] as const) {
+        try {
+          const partTemplate = swApp.GetUserPreferenceStringValue(partId);
+          const assemblyTemplate = swApp.GetUserPreferenceStringValue(asmId);
+          const drawingTemplate = swApp.GetUserPreferenceStringValue(drwId);
+          if (partTemplate && SolidWorksConfig.validateTemplatePath(partTemplate)) {
+            return {
+              part: partTemplate,
+              assembly:
+                assemblyTemplate && SolidWorksConfig.validateTemplatePath(assemblyTemplate)
+                  ? assemblyTemplate
+                  : partTemplate.replace(/Part/i, 'Assembly'),
+              drawing:
+                drawingTemplate && SolidWorksConfig.validateTemplatePath(drawingTemplate)
+                  ? drawingTemplate
+                  : partTemplate.replace(/Part/i, 'Drawing'),
+            };
+          }
+        } catch (_e) {
+          // try next constant set
         }
-      } catch (_e) {
-        // User preferences not available
       }
 
       // Strategy 2: Build paths based on SolidWorks version
@@ -128,17 +139,11 @@ export class SolidWorksConfig {
    * Note: This is a best-effort check and may not work in all environments
    */
   static validateTemplatePath(templatePath: string): boolean {
+    if (!templatePath) return false;
     try {
-      // In Node.js environment with file system access
-      if (typeof require !== 'undefined') {
-        const fs = require('node:fs');
-        return fs.existsSync(templatePath);
-      }
-      // If we can't validate, assume it's valid
-      return true;
+      return existsSync(templatePath);
     } catch (_error) {
-      // Can't validate, assume it's valid
-      return true;
+      return false;
     }
   }
 

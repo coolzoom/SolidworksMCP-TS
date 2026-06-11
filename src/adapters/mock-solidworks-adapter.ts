@@ -58,7 +58,9 @@ export class MockSolidWorksAdapter {
         const templates: Record<number, string> = {
           0: `C:\\ProgramData\\SolidWorks\\SOLIDWORKS ${this.version}\\templates\\Part.prtdot`,
           1: `C:\\ProgramData\\SolidWorks\\SOLIDWORKS ${this.version}\\templates\\Assembly.asmdot`,
-          8: `C:\\ProgramData\\SolidWorks\\SOLIDWORKS ${this.version}\\templates\\Drawing.drwdot`,
+          8: `C:\\ProgramData\\SolidWorks\\SOLIDWORKS ${this.version}\\templates\\Part.prtdot`,
+          9: `C:\\ProgramData\\SolidWorks\\SOLIDWORKS ${this.version}\\templates\\Assembly.asmdot`,
+          10: `C:\\ProgramData\\SolidWorks\\SOLIDWORKS ${this.version}\\templates\\Drawing.drwdot`,
         };
         return templates[type] || '';
       },

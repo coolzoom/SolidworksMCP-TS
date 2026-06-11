@@ -14,7 +14,7 @@ const EnvironmentSchema = z.object({
   // SolidWorks settings
   solidworks: z.object({
     path: z.string().optional(),
-    version: z.string().default('2024'),
+    version: z.string().default('2026'),
     useMock: z.boolean().default(false),
   }),
 

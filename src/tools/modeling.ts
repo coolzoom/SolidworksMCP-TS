@@ -86,6 +86,46 @@ export const modelingTools = [
   },
 
   {
+    name: 'create_revolve',
+    description: 'Create a revolve feature from the active sketch profile',
+    inputSchema: z.object({
+      angle: z.number().default(360).describe('Revolve angle in degrees'),
+      reverse: z.boolean().default(false).describe('Reverse direction'),
+      axisPickY: z
+        .number()
+        .optional()
+        .describe('Y coordinate in mm for axis pick on centerline (default 1mm)'),
+    }),
+    handler: (args: any, swApi: SolidWorksAPI) => {
+      try {
+        const axisPickYMeters = (args.axisPickY ?? 1) / 1000;
+        const feature = swApi.createRevolve(args.angle, args.reverse, axisPickYMeters);
+        return `Created revolve: ${feature.name}`;
+      } catch (error) {
+        return `Failed to create revolve: ${error}`;
+      }
+    },
+  },
+
+  {
+    name: 'set_part_color',
+    description: 'Set display color (RGB) on all faces of the active part solid body',
+    inputSchema: z.object({
+      r: z.number().min(0).max(255).default(0),
+      g: z.number().min(0).max(255).default(0),
+      b: z.number().min(0).max(255).default(0),
+    }),
+    handler: (args: { r?: number; g?: number; b?: number }, swApi: SolidWorksAPI) => {
+      try {
+        swApi.setPartColor(args.r ?? 0, args.g ?? 0, args.b ?? 0);
+        return `Set part color to RGB(${args.r ?? 0}, ${args.g ?? 0}, ${args.b ?? 0})`;
+      } catch (error) {
+        return `Failed to set part color: ${error}`;
+      }
+    },
+  },
+
+  {
     name: 'get_dimension',
     description: 'Get the value of a dimension',
     inputSchema: z.object({

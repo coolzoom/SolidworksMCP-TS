@@ -10,6 +10,7 @@
 
 import type { SolidWorksFeature, SolidWorksModel } from '../solidworks/types.js';
 import { logger } from '../utils/logger.js';
+import { SolidWorksConfig } from '../utils/solidworks-config.js';
 import type {
   AdapterHealth,
   AdapterResult,
@@ -332,12 +333,11 @@ export class WinAxAdapter implements ISolidWorksAdapter {
   async createPart(): Promise<SolidWorksModel> {
     if (!this.swApp) throw new Error('Not connected to SolidWorks');
 
-    this.currentModel = this.swApp.NewPart();
+    const template = SolidWorksConfig.getTemplatePath(this.swApp, 'part');
+    this.currentModel = this.swApp.NewDocument(template, 0, 0, 0);
 
-    if (!this.currentModel) {
-      // Fallback to template-based creation
-      const template = this.swApp.GetUserPreferenceStringValue(8) || '';
-      this.currentModel = this.swApp.NewDocument(template, 0, 0, 0);
+    if (!this.currentModel?.GetTitle) {
+      throw new Error('Failed to create new part - NewDocument returned invalid document');
     }
 
     return {
