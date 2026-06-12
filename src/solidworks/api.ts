@@ -5,6 +5,11 @@ import { loadWinax } from '../adapters/winax-loader.js';
 import { logger } from '../utils/logger.js';
 import { SolidWorksConfig } from '../utils/solidworks-config.js';
 import { executeRevolveViaScriptBridge, setPartColorViaScriptBridge } from '../utils/sw-com-bridge.js';
+import {
+  createHexSocketScrewViaBridge,
+  type HexSocketScrewParams,
+  type HexSocketScrewResult,
+} from '../utils/screw-generator-bridge.js';
 import type { SolidWorksFeature, SolidWorksModel } from './types.js';
 
 let winax: any = null;
@@ -551,6 +556,13 @@ export class SolidWorksAPI {
     if (!result.success) {
       throw new Error(result.error || 'Failed to set part color');
     }
+  }
+
+  /**
+   * Create ISO 4762 hex socket head cap screw (full workflow via VBS bridge).
+   */
+  createHexSocketScrew(params: HexSocketScrewParams): HexSocketScrewResult {
+    return createHexSocketScrewViaBridge(params);
   }
 
   private selectLatestSketchFeature(): boolean {

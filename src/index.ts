@@ -44,6 +44,7 @@ import { ResourceStateStore } from './state/store.js';
 import { analysisTools } from './tools/analysis.js';
 import { drawingTools } from './tools/drawing.js';
 import { exportTools } from './tools/export.js';
+import { hardwareTools } from './tools/hardware.js';
 // Import existing tools
 import { modelingTools } from './tools/modeling.js';
 import { nativeMacroTools } from './tools/native-macro.js';
@@ -173,6 +174,7 @@ class SolidWorksMCPServer {
     // Combine all tools including enhanced refactored versions
     const allTools = [
       ...modelingTools,
+      ...hardwareTools,
       ...drawingTools,
       ...sketchTools,
       ...exportTools,
