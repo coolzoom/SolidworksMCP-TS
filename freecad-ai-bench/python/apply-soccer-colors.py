@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply classic black/white panel colors to soccer_ball.FCStd (run in FreeCAD GUI)."""
+"""Apply Telstar black/white panel colors with seam gaps (run in FreeCAD GUI)."""
 
 import FreeCAD as App
 
@@ -7,24 +7,33 @@ doc = App.ActiveDocument
 if doc is None:
     raise RuntimeError("Open soccer_ball.FCStd first")
 
-panels = doc.getObject("Panels")
-solid = doc.getObject("SoccerBall")
-if panels is None:
-    raise RuntimeError("Panels group not found")
+ball = doc.getObject("SoccerBall")
+seam = doc.getObject("Seams")
+pents = doc.getObject("BlackPentagons")
+hexes = doc.getObject("WhiteHexagons")
 
-if solid and solid.ViewObject:
-    solid.ViewObject.Visibility = False
+if ball and ball.ViewObject:
+    ball.ViewObject.Visibility = False
 
-for obj in panels.Group:
-    vo = obj.ViewObject
-    if vo is None:
-        continue
-    if obj.Name.startswith("Pent_"):
-        vo.ShapeColor = (0.06, 0.06, 0.06)
-    else:
-        vo.ShapeColor = (0.96, 0.96, 0.96)
-    vo.LineColor = (0.2, 0.2, 0.2)
-    vo.LineWidth = 1.5
+if seam and seam.ViewObject:
+    seam.ViewObject.ShapeColor = (0.03, 0.03, 0.03)
+    seam.ViewObject.Visibility = True
+
+if pents:
+    for obj in pents.Group:
+        vo = obj.ViewObject
+        if vo:
+            vo.ShapeColor = (0.04, 0.04, 0.04)
+            vo.LineColor = (0.12, 0.12, 0.12)
+            vo.Visibility = True
+
+if hexes:
+    for obj in hexes.Group:
+        vo = obj.ViewObject
+        if vo:
+            vo.ShapeColor = (0.97, 0.97, 0.97)
+            vo.LineColor = (0.35, 0.35, 0.35)
+            vo.Visibility = True
 
 doc.recompute()
-App.Console.PrintMessage("Soccer ball colors applied (12 black pentagons, 20 white hexagons).\n")
+App.Console.PrintMessage("Applied: black pentagons + white hexagons + dark seams.\n")

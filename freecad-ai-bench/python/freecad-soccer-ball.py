@@ -2,9 +2,9 @@
 """
 Generate a spherical soccer ball in FreeCAD.
 
-Solid body: perfect sphere (FIFA-sized radius default 110 mm).
-Surface pattern: 12 pentagons + 20 hexagons from truncated icosahedron topology,
-each panel tessellated on the sphere so patches follow the curved surface.
+- Solid export: perfect sphere (R=110 mm default)
+- Visual: 12 black pent + 20 white hex separate curved patches with seam gaps
+- Seam gaps show a dark underlayer between panels (Telstar style)
 """
 
 from __future__ import annotations
@@ -18,6 +18,9 @@ import Part
 
 PHI = (1.0 + math.sqrt(5.0)) / 2.0
 PANEL_SUBDIV = int(os.environ.get("SOCCER_PANEL_SUBDIV", "10"))
+PANEL_SHRINK = float(os.environ.get("SOCCER_PANEL_GAP", "0.86"))
+PANEL_LIFT = float(os.environ.get("SOCCER_PANEL_LIFT", "1.004"))
+SEAM_RADIUS = float(os.environ.get("SOCCER_SEAM_SCALE", "0.996"))
 
 PENTAGONS = [
     [0, 28, 36, 39, 29],
@@ -121,16 +124,34 @@ def _panel_center(points: list[App.Vector], radius: float) -> App.Vector:
     return _on_sphere(App.Vector(cx, cy, cz), radius)
 
 
+def _shrink_corners(corners: list[App.Vector], radius: float, shrink: float) -> list[App.Vector]:
+    """Move panel corners toward center on the sphere, leaving seam gaps at edges."""
+    center = _panel_center(corners, radius)
+    out: list[App.Vector] = []
+    for p in corners:
+        v = App.Vector(
+            center.x + (p.x - center.x) * shrink,
+            center.y + (p.y - center.y) * shrink,
+            center.z + (p.z - center.z) * shrink,
+        )
+        out.append(_on_sphere(v, radius))
+    return out
+
+
 def _spherical_panel_shell(
     verts: list[App.Vector],
     ring: list[int],
     radius: float,
     subdiv: int,
+    *,
+    shrink: float = PANEL_SHRINK,
+    lift: float = PANEL_LIFT,
 ) -> Part.Shape:
-    """Tessellated spherical cap: small triangles with all vertices on the sphere."""
-    corners = [verts[i] for i in ring]
-    boundary = _subdivide_ring(corners, radius, subdiv)
-    center = _panel_center(corners, radius)
+    surface_r = radius * lift
+    corners = [_on_sphere(verts[i], surface_r) for i in ring]
+    corners = _shrink_corners(corners, surface_r, shrink)
+    boundary = _subdivide_ring(corners, surface_r, subdiv)
+    center = _panel_center(corners, surface_r)
     faces: list[Part.Face] = []
     for i in range(len(boundary)):
         a = boundary[i]
@@ -141,26 +162,34 @@ def _spherical_panel_shell(
             continue
     if not faces:
         return Part.Shape()
-    shell = Part.makeShell(faces)
-    return Part.makeSolid(shell)
+    return Part.makeSolid(Part.makeShell(faces))
 
 
-def _apply_panel_colors(group, sphere_obj) -> None:
-    try:
-        import FreeCADGui  # type: ignore
+def _set_view_color(
+    obj,
+    shape_rgb: tuple[float, float, float],
+    *,
+    line_rgb: tuple[float, float, float] = (0.25, 0.25, 0.25),
+    visible: bool = True,
+) -> None:
+    vo = getattr(obj, "ViewObject", None)
+    if vo is None:
+        return
+    vo.ShapeColor = shape_rgb
+    vo.LineColor = line_rgb
+    vo.LineWidth = 1.0
+    vo.Visibility = visible
+    if hasattr(vo, "DisplayMode"):
+        vo.DisplayMode = "Shaded"
 
-        svo = getattr(sphere_obj, "ViewObject", None)
-        if svo is not None:
-            svo.Visibility = False
-        for i, child in enumerate(group.Group):
-            vo = getattr(child, "ViewObject", None)
-            if vo is None:
-                continue
-            vo.ShapeColor = (0.06, 0.06, 0.06) if i < len(PENTAGONS) else (0.96, 0.96, 0.96)
-            vo.LineColor = (0.15, 0.15, 0.15)
-            vo.LineWidth = 1.0
-    except Exception:
-        pass
+
+def _apply_telstar_colors(ball, seam, pent_group, hex_group) -> None:
+    _set_view_color(ball, (1.0, 1.0, 1.0), visible=False)
+    _set_view_color(seam, (0.03, 0.03, 0.03), line_rgb=(0.1, 0.1, 0.1))
+    for child in pent_group.Group:
+        _set_view_color(child, (0.04, 0.04, 0.04), line_rgb=(0.12, 0.12, 0.12))
+    for child in hex_group.Group:
+        _set_view_color(child, (0.97, 0.97, 0.97), line_rgb=(0.35, 0.35, 0.35))
 
 
 def build_soccer_ball(radius_mm: float = 110.0) -> tuple[App.Document, Part.Solid]:
@@ -168,27 +197,33 @@ def build_soccer_ball(radius_mm: float = 110.0) -> tuple[App.Document, Part.Soli
     sphere = Part.makeSphere(radius_mm)
 
     doc = App.newDocument("SoccerBall")
+
     ball = doc.addObject("Part::Feature", "SoccerBall")
-    ball.Label = f"Soccer ball R{radius_mm:g}mm"
+    ball.Label = f"Soccer ball solid R{radius_mm:g}mm"
     ball.Shape = sphere
 
-    group = doc.addObject("App::DocumentObjectGroup", "Panels")
-    subdiv = max(4, PANEL_SUBDIV)
+    seam = doc.addObject("Part::Feature", "Seams")
+    seam.Label = "Seam underlayer"
+    seam.Shape = Part.makeSphere(radius_mm * SEAM_RADIUS)
+
+    pent_group = doc.addObject("App::DocumentObjectGroup", "BlackPentagons")
+    hex_group = doc.addObject("App::DocumentObjectGroup", "WhiteHexagons")
+    subdiv = max(6, PANEL_SUBDIV)
 
     for i, ring in enumerate(PENTAGONS):
         panel = doc.addObject("Part::Feature", f"Pent_{i + 1:02d}")
-        panel.Label = f"Pentagon {i + 1}"
+        panel.Label = f"Black pentagon {i + 1}"
         panel.Shape = _spherical_panel_shell(verts, ring, radius_mm, subdiv)
-        group.addObject(panel)
+        pent_group.addObject(panel)
 
     for i, ring in enumerate(HEXAGONS):
         panel = doc.addObject("Part::Feature", f"Hex_{i + 1:02d}")
-        panel.Label = f"Hexagon {i + 1}"
+        panel.Label = f"White hexagon {i + 1}"
         panel.Shape = _spherical_panel_shell(verts, ring, radius_mm, subdiv)
-        group.addObject(panel)
+        hex_group.addObject(panel)
 
     doc.recompute()
-    _apply_panel_colors(group, ball)
+    _apply_telstar_colors(ball, seam, pent_group, hex_group)
     return doc, sphere
 
 
@@ -207,8 +242,8 @@ def main() -> int:
 
     ideal_volume = 4.0 / 3.0 * math.pi * radius**3
     App.Console.PrintMessage(
-        f"Spherical soccer ball R={radius:g}mm, volume={body.Volume:.1f} mm³ "
-        f"(ideal sphere {ideal_volume:.1f})\n"
+        f"Spherical soccer ball R={radius:g}mm, panels=32 with gaps, "
+        f"solid volume={body.Volume:.1f} mm³ (ideal {ideal_volume:.1f})\n"
     )
     App.Console.PrintMessage(f"Saved FreeCAD: {out_path}\n")
     App.Console.PrintMessage(f"Saved STEP:    {step_path}\n")
