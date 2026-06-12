@@ -1,11 +1,12 @@
 #Requires -Version 5.1
 param(
-    [switch]$RealSolidWorks
+    [switch]$CreateScrew
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\lib\common.ps1')
 
+$benchRoot = Get-BenchRoot
 $repoRoot = Get-RepoRoot
 $node = Find-NodeExe
 if (-not $node) {
@@ -13,24 +14,32 @@ if (-not $node) {
     exit 1
 }
 
-$distIndex = Join-Path $repoRoot 'dist\index.js'
-if (-not (Test-Path -LiteralPath $distIndex)) {
-    Write-Err "MCP not built: $distIndex. Run install-mcp.bat first."
+$mcpEntry = Join-Path $benchRoot 'mcp-server\index.mjs'
+if (-not (Test-Path -LiteralPath $mcpEntry)) {
+    Write-Err "FreeCAD MCP server missing: $mcpEntry. Run install-mcp.bat first."
     exit 1
 }
 
-$mode = if ($RealSolidWorks) { 'real SolidWorks' } else { 'mock adapter' }
-Write-Step "Running MCP smoke test ($mode)"
+$mcpSdk = Join-Path $repoRoot 'node_modules\@modelcontextprotocol\sdk'
+if (-not (Test-Path -LiteralPath $mcpSdk)) {
+    Write-Err 'MCP SDK missing. Run install-mcp.bat first.'
+    exit 1
+}
+
+Write-Step 'Running FreeCAD MCP smoke test'
+if ($CreateScrew) {
+    Write-Host '  (includes create_hex_socket_screw tool call)'
+}
 
 Push-Location $repoRoot
 try {
-    $args = @((Join-Path $repoRoot 'scripts\test-mcp-smoke.mjs'))
-    if ($RealSolidWorks) { $args += '--real' }
+    $args = @((Join-Path $benchRoot 'scripts\test-freecad-mcp.mjs'))
+    if ($CreateScrew) { $args += '--create-screw' }
     & $node @args
-    Assert-LastExitCode 'MCP smoke test'
+    Assert-LastExitCode 'FreeCAD MCP smoke test'
 }
 finally {
     Pop-Location
 }
 
-Write-Ok 'MCP smoke test passed'
+Write-Ok 'FreeCAD MCP smoke test passed'

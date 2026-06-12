@@ -4,7 +4,9 @@ param(
     [switch]$SkipFastenersInstall,
     [switch]$SkipMcpInstall,
     [switch]$SkipTests,
-    [switch]$ConfigureCursor,
+    [switch]$SkipCursorConfig,
+    [ValidateSet('global', 'project', 'both')]
+    [string]$CursorScope = 'both',
     [switch]$ForceFreeCad,
     [switch]$ForceFasteners
 )
@@ -36,14 +38,14 @@ try {
     }
 
     if (-not $SkipMcpInstall) {
-        $mcpArgs = @()
-        if ($ConfigureCursor) { $mcpArgs += '-ConfigureCursor' }
-        Invoke-Step 'Install SolidWorks MCP' 'install-mcp.ps1' $mcpArgs
+        $mcpArgs = @('-CursorScope', $CursorScope)
+        if ($SkipCursorConfig) { $mcpArgs += '-SkipCursorConfig' }
+        Invoke-Step 'Install FreeCAD MCP' 'install-mcp.ps1' $mcpArgs
     }
 
     if (-not $SkipTests) {
         Invoke-Step 'Test FreeCAD screw model' 'test-freecad-model.ps1'
-        Invoke-Step 'Test MCP server' 'test-mcp.ps1'
+        Invoke-Step 'Test FreeCAD MCP server' 'test-mcp.ps1'
     }
 
     Write-Host ''

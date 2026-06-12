@@ -1,15 +1,17 @@
 #Requires -Version 5.1
 param(
-    [switch]$SkipBuild,
-    [switch]$ConfigureCursor,
-    [switch]$SkipNpmInstall
+    [switch]$SkipNpmInstall,
+    [switch]$SkipCursorConfig,
+    [ValidateSet('global', 'project', 'both')]
+    [string]$CursorScope = 'both'
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\lib\common.ps1')
 
+$benchRoot = Get-BenchRoot
 $repoRoot = Get-RepoRoot
-Write-Step "Installing SolidWorks MCP in: $repoRoot"
+Write-Step "Installing FreeCAD MCP dependencies"
 
 $node = Find-NodeExe
 $npm = Find-NpmCmd
@@ -19,39 +21,38 @@ if (-not $node -or -not $npm) {
 }
 Write-Ok "Node: $node"
 
+$mcpEntry = Join-Path $benchRoot 'mcp-server\index.mjs'
+if (-not (Test-Path -LiteralPath $mcpEntry)) {
+    Write-Err "Missing FreeCAD MCP server: $mcpEntry"
+    exit 1
+}
+
 Push-Location $repoRoot
 try {
     if (-not $SkipNpmInstall) {
-        Write-Step 'Running npm install'
+        Write-Step 'Running npm install (MCP SDK from repo root)'
         & $npm install
         Assert-LastExitCode 'npm install'
         Write-Ok 'npm install complete'
     }
 
-    if (-not $SkipBuild) {
-        Write-Step 'Running npm run build'
-        & $npm run build
-        Assert-LastExitCode 'npm run build'
-        Write-Ok 'TypeScript build complete'
-    }
-
-    $distIndex = Join-Path $repoRoot 'dist\index.js'
-    if (-not (Test-Path -LiteralPath $distIndex)) {
-        Write-Err "Missing build output: $distIndex"
+    $mcpSdk = Join-Path $repoRoot 'node_modules\@modelcontextprotocol\sdk'
+    if (-not (Test-Path -LiteralPath $mcpSdk)) {
+        Write-Err "Missing @modelcontextprotocol/sdk at $mcpSdk"
         exit 1
     }
-
-    if ($ConfigureCursor) {
-        Write-Step 'Configuring Cursor MCP entry'
-        & $node (Join-Path $repoRoot 'scripts\configure-mcp.mjs') --client cursor --project-dir $repoRoot
-        Assert-LastExitCode 'configure-mcp'
-        Write-Ok 'Cursor MCP configuration updated'
-    } else {
-        Write-Warn 'Skipped Cursor MCP config (pass -ConfigureCursor to install-mcp.ps1)'
-    }
+    Write-Ok "FreeCAD MCP server ready: $mcpEntry"
 }
 finally {
     Pop-Location
 }
 
-Write-Ok 'MCP install complete'
+if (-not $SkipCursorConfig) {
+    Write-Step 'Configuring Cursor MCP for FreeCAD'
+    & (Join-Path $PSScriptRoot 'configure-cursor-mcp.ps1') -CursorScope $CursorScope
+    Assert-LastExitCode 'configure-cursor-mcp'
+} else {
+    Write-Warn 'Skipped Cursor MCP config (-SkipCursorConfig)'
+}
+
+Write-Ok 'FreeCAD MCP install complete'
