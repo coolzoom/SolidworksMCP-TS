@@ -12,8 +12,8 @@
   config         - Cursor mcp.json only
   verify         - MCP health check + Cursor sync
   test-mcp       - MCP smoke test
-  test-model     - generate M3x20 ISO4762 screw test
-  screw          - generate ISO4762 screw (-Size -Length)
+  test-model     - generate M3x20 ISO4762 screw (FreeCADCmd, no RPC)
+  screw          - generate ISO4762 screw via MCP (-Size M5 -Length 60)
   help           - show commands
 
   Aliases: all/install -> mcp, test -> test-mcp
@@ -347,23 +347,35 @@ freecad-mcp.bat commands:
   config         Cursor mcp.json only
   verify         MCP health check
   test-mcp       MCP smoke test
-  test-model     Generate screw test via MCP execute_code
+  test-model     Generate M3x20 screw via FreeCADCmd (setup default test)
   screw          Generate screw via MCP execute_code (FreeCAD RPC required)
   help           This help
 
 Examples:
   freecad-mcp.bat
   freecad-mcp.bat mcp
+  freecad-mcp.bat test-model -Size M3 -Length 20
   freecad-mcp.bat screw -Size M5 -Length 60   (FreeCAD RPC server must be running)
+
+Note: always use -Size M3 and -Length 20 (Length is mm, not M3).
 
 '@
 }
 
 function Invoke-BenchStep {
-    param([string]$Name, [string]$Script, [object[]]$StepArgs = @())
+    param(
+        [string]$Name,
+        [string]$Script,
+        [hashtable]$Params = @{}
+    )
     Write-Host ''
     Write-Host "========== $Name ==========" -ForegroundColor Magenta
-    & (Join-Path $PSScriptRoot $Script) @StepArgs
+    $path = Join-Path $PSScriptRoot $Script
+    if ($Params.Count -gt 0) {
+        & $path @Params
+    } else {
+        & $path
+    }
     Assert-LastExitCode $Name
 }
 
@@ -384,21 +396,24 @@ function Invoke-McpSetup {
 
 function Invoke-FullSetup {
     if (-not $SkipFreeCadInstall) {
-        $fcArgs = @()
-        if ($ForceFreeCad) { $fcArgs += '-Force' }
-        Invoke-BenchStep 'Install FreeCAD' 'install-freecad.ps1' $fcArgs
+        $fcParams = @{}
+        if ($ForceFreeCad) { $fcParams.Force = $true }
+        Invoke-BenchStep 'Install FreeCAD' 'install-freecad.ps1' -Params $fcParams
     }
     if (-not $SkipFastenersInstall) {
-        $faArgs = @()
-        if ($ForceFasteners) { $faArgs += '-Force' }
-        Invoke-BenchStep 'Install Fasteners Workbench' 'install-fasteners.ps1' $faArgs
+        $faParams = @{}
+        if ($ForceFasteners) { $faParams.Force = $true }
+        Invoke-BenchStep 'Install Fasteners Workbench' 'install-fasteners.ps1' -Params $faParams
         Invoke-BenchStep 'Initialize Fasteners Workbench' 'init-fasteners.ps1'
     }
     if (-not $SkipMcpInstall) {
         Invoke-McpSetup
     }
     if (-not $SkipTests) {
-        Invoke-FreeCadScrewViaMcp
+        Invoke-BenchStep 'Test FreeCAD screw model' 'test-freecad-model.ps1' -Params @{
+            Size   = $Size
+            Length = $Length
+        }
         if (-not $SkipCursorConfig) { Set-CursorFreeCadMcpConfig -Scope $CursorScope }
         Invoke-FreeCadMcpSmokeTest
         Write-Ok 'MCP smoke test passed'
@@ -572,14 +587,14 @@ try {
     switch ($Action) {
         'setup' { Invoke-FullSetup }
         'freecad' {
-            $fcArgs = @()
-            if ($ForceFreeCad) { $fcArgs += '-Force' }
-            Invoke-BenchStep 'Install FreeCAD' 'install-freecad.ps1' $fcArgs
+            $fcParams = @{}
+            if ($ForceFreeCad) { $fcParams.Force = $true }
+            Invoke-BenchStep 'Install FreeCAD' 'install-freecad.ps1' -Params $fcParams
         }
         'fasteners' {
-            $faArgs = @()
-            if ($ForceFasteners) { $faArgs += '-Force' }
-            Invoke-BenchStep 'Install Fasteners Workbench' 'install-fasteners.ps1' $faArgs
+            $faParams = @{}
+            if ($ForceFasteners) { $faParams.Force = $true }
+            Invoke-BenchStep 'Install Fasteners Workbench' 'install-fasteners.ps1' -Params $faParams
         }
         'init-fasteners' { Invoke-BenchStep 'Initialize Fasteners Workbench' 'init-fasteners.ps1' }
         'mcp' { Invoke-McpSetup }

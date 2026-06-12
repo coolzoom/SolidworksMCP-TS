@@ -16,7 +16,7 @@ if not "%~1"=="" set "ACTION=%~1"
 
 :run
 if /I not "%ACTION%"=="help" shift
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\freecad-mcp.ps1" -Action %ACTION% -CursorScope both %1 %2 %3 %4 %5 %6 %7 %8 %9
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\freecad-mcp.ps1" -Action %ACTION% -CursorScope both %*
 set "EC=%ERRORLEVEL%"
 if %EC%==0 (
   if /I not "%ACTION%"=="help" (

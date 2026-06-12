@@ -1,3 +1,11 @@
-{
-  "mcpServers": {}
+﻿{
+    "mcpServers":  {
+                       "freecad":  {
+                                       "command":  "C:/Users/hands/AppData/Local/Microsoft/WinGet/Packages/astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe/uvx.exe",
+                                       "args":  [
+                                                    "freecad-mcp"
+                                                ]
+                                   }
+                   }
 }
+
