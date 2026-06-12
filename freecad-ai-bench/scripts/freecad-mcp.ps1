@@ -351,6 +351,8 @@ freecad-mcp.bat commands:
   screw          Generate screw via MCP execute_code (FreeCAD RPC required)
   help           This help
 
+Linux/macOS: use ./freecad-mcp.sh (same commands and flags)
+
 Examples:
   freecad-mcp.bat
   freecad-mcp.bat mcp
