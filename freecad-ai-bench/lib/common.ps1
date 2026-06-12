@@ -84,3 +84,99 @@ function Assert-LastExitCode([string]$StepName) {
 function Get-FastenersModPath {
     return Join-Path $env:APPDATA 'FreeCAD\v1-1\Mod\Fasteners'
 }
+
+function Get-FreeCadModRoots {
+    $roots = @(
+        (Join-Path $env:APPDATA 'FreeCAD\v1-1\Mod'),
+        (Join-Path $env:APPDATA 'FreeCAD\Mod')
+    )
+    return $roots | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -Unique
+}
+
+function Get-FreeCadMcpAddonPath {
+    $preferred = Join-Path $env:APPDATA 'FreeCAD\v1-1\Mod\FreeCADMCP'
+    if (Test-Path -LiteralPath $preferred) { return $preferred }
+    $legacy = Join-Path $env:APPDATA 'FreeCAD\Mod\FreeCADMCP'
+    if (Test-Path -LiteralPath $legacy) { return $legacy }
+    return $preferred
+}
+
+function Get-FreeCadMcpVendorPath {
+    return (Join-Path (Get-BenchRoot) 'vendor\freecad-mcp')
+}
+
+function Find-GitExe {
+    Refresh-PathEnv
+    $cmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($candidate in @(
+        (Join-Path $env:ProgramFiles 'Git\cmd\git.exe'),
+        (Join-Path $env:ProgramFiles 'Git\bin\git.exe')
+    )) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
+function Find-UvxExe {
+    Refresh-PathEnv
+    $cmd = Get-Command uvx -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    foreach ($candidate in @(
+        (Join-Path $env:USERPROFILE '.local\bin\uvx.exe'),
+        (Join-Path $env:USERPROFILE '.cargo\bin\uvx.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\uv\uvx.exe')
+    )) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+
+    $pythonScripts = Join-Path $env:APPDATA 'Python\Python311\Scripts\uvx.exe'
+    if (Test-Path -LiteralPath $pythonScripts) { return $pythonScripts }
+
+    return $null
+}
+
+function Find-UvExe {
+    Refresh-PathEnv
+    $cmd = Get-Command uv -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    foreach ($candidate in @(
+        (Join-Path $env:USERPROFILE '.local\bin\uv.exe'),
+        (Join-Path $env:USERPROFILE '.cargo\bin\uv.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\uv\uv.exe')
+    )) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
+function Install-UvToolchain {
+    if (Find-UvxExe) {
+        Write-Ok 'uvx already available'
+        return
+    }
+
+    Write-Step 'Installing uv (provides uvx for freecad-mcp)'
+    if (Test-WingetAvailable) {
+        & winget install --id astral-sh.uv -e --accept-source-agreements --accept-package-agreements
+        Refresh-PathEnv
+        if (Find-UvxExe) {
+            Write-Ok 'uv installed via winget'
+            return
+        }
+    }
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        & $python.Source -m pip install --upgrade uv
+        Refresh-PathEnv
+        if (Find-UvxExe) {
+            Write-Ok 'uv installed via pip'
+            return
+        }
+    }
+
+    throw 'Could not install uv/uvx. Install manually: winget install astral-sh.uv'
+}

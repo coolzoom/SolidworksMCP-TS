@@ -6,13 +6,13 @@ Write-Step 'Initializing Fasteners Workbench (import + ISO4762 table check)'
 
 $freecadCmd = Find-FreeCadCmd
 if (-not $freecadCmd) {
-    Write-Err 'FreeCADCmd not found. Run install-freecad.bat first.'
+    Write-Err 'FreeCADCmd not found. Run: freecad-mcp.bat freecad'
     exit 1
 }
 
 $target = Get-FastenersModPath
 if (-not (Test-Path -LiteralPath $target)) {
-    Write-Err 'Fasteners Workbench not installed. Run install-fasteners.bat first.'
+    Write-Err 'Fasteners Workbench not installed. Run: freecad-mcp.bat fasteners'
     exit 1
 }
 
